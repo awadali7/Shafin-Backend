@@ -1,0 +1,282 @@
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Create users table
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    email_verified BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    last_login_at TIMESTAMP,
+    last_login_ip VARCHAR(45),
+    last_login_device JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+-- Create courses table
+CREATE TABLE IF NOT EXISTS courses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE NOT NULL,
+    description TEXT,
+    price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    cover_image VARCHAR(500),
+    icon_name VARCHAR(100),
+    is_active BOOLEAN DEFAULT true,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_courses_slug ON courses(slug);
+CREATE INDEX IF NOT EXISTS idx_courses_is_active ON courses(is_active);
+
+-- Create videos table
+CREATE TABLE IF NOT EXISTS videos (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    video_url VARCHAR(500) NOT NULL,
+    description TEXT,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    pdfs JSONB,
+    markdown TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(course_id, order_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_videos_course_id ON videos(course_id);
+CREATE INDEX IF NOT EXISTS idx_videos_order_index ON videos(course_id, order_index);
+CREATE INDEX IF NOT EXISTS idx_videos_is_active ON videos(is_active);
+
+-- Create course_requests table
+CREATE TABLE IF NOT EXISTS course_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    request_message TEXT,
+    admin_notes TEXT,
+    reviewed_by UUID REFERENCES users(id),
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_course_requests_user_id ON course_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_course_requests_course_id ON course_requests(course_id);
+CREATE INDEX IF NOT EXISTS idx_course_requests_status ON course_requests(status);
+CREATE INDEX IF NOT EXISTS idx_course_requests_user_course ON course_requests(user_id, course_id);
+
+-- Create course_access table
+CREATE TABLE IF NOT EXISTS course_access (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    request_id UUID REFERENCES course_requests(id),
+    access_start TIMESTAMP NOT NULL,
+    access_end TIMESTAMP NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    granted_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (access_end > access_start)
+);
+
+CREATE INDEX IF NOT EXISTS idx_course_access_user_id ON course_access(user_id);
+CREATE INDEX IF NOT EXISTS idx_course_access_course_id ON course_access(course_id);
+CREATE INDEX IF NOT EXISTS idx_course_access_active ON course_access(user_id, course_id, is_active, access_end);
+CREATE INDEX IF NOT EXISTS idx_course_access_dates ON course_access(access_start, access_end);
+
+-- Create video_progress table
+CREATE TABLE IF NOT EXISTS video_progress (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    is_watched BOOLEAN DEFAULT false,
+    is_unlocked BOOLEAN DEFAULT false,
+    watched_at TIMESTAMP,
+    unlocked_at TIMESTAMP,
+    watch_duration INTEGER,
+    last_position INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, video_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_progress_user_video ON video_progress(user_id, video_id);
+CREATE INDEX IF NOT EXISTS idx_video_progress_user_course ON video_progress(user_id, course_id);
+CREATE INDEX IF NOT EXISTS idx_video_progress_unlocked ON video_progress(user_id, course_id, is_unlocked);
+
+-- Create password_resets table
+CREATE TABLE IF NOT EXISTS password_resets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);
+
+-- Create email_logs table (optional)
+CREATE TABLE IF NOT EXISTS email_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id),
+    email_type VARCHAR(50) NOT NULL,
+    recipient_email VARCHAR(255) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    status VARCHAR(20) DEFAULT 'sent' CHECK (status IN ('sent', 'failed', 'pending')),
+    error_message TEXT,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_logs_user_id ON email_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
+
+-- Create user_sessions table for device tracking
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_token VARCHAR(255) UNIQUE NOT NULL,
+    device_info JSONB,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    is_active BOOLEAN DEFAULT true,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(user_id, is_active, expires_at);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
+
+-- Create function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Create triggers for updated_at
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_courses_updated_at ON courses;
+CREATE TRIGGER update_courses_updated_at BEFORE UPDATE ON courses
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_videos_updated_at ON videos;
+CREATE TRIGGER update_videos_updated_at BEFORE UPDATE ON videos
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_course_requests_updated_at ON course_requests;
+CREATE TRIGGER update_course_requests_updated_at BEFORE UPDATE ON course_requests
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_course_access_updated_at ON course_access;
+CREATE TRIGGER update_course_access_updated_at BEFORE UPDATE ON course_access
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_video_progress_updated_at ON video_progress;
+CREATE TRIGGER update_video_progress_updated_at BEFORE UPDATE ON video_progress
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Note: user_sessions doesn't have updated_at column, using last_activity instead
+
+-- Create notifications table
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL CHECK (type IN ('course_access_granted', 'multiple_device_login', 'announcement', 'course_request_approved', 'course_request_rejected', 'system_update')),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    data JSONB,
+    is_read BOOLEAN DEFAULT false,
+    read_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+
+-- Create push_subscriptions table for browser push notifications
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL,
+    p256dh VARCHAR(255) NOT NULL,
+    auth VARCHAR(255) NOT NULL,
+    user_agent TEXT,
+    device_info JSONB,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, endpoint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_active ON push_subscriptions(user_id, is_active);
+
+-- Create announcements table (for admin announcements)
+CREATE TABLE IF NOT EXISTS announcements (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'info' CHECK (type IN ('info', 'warning', 'success', 'error')),
+    target_audience VARCHAR(50) DEFAULT 'all' CHECK (target_audience IN ('all', 'users', 'admins')),
+    is_active BOOLEAN DEFAULT true,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_announcements_target ON announcements(target_audience, is_active);
+
+-- Create blog_posts table
+CREATE TABLE IF NOT EXISTS blog_posts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE NOT NULL,
+    excerpt TEXT,
+    content TEXT NOT NULL,
+    cover_image VARCHAR(500),
+    author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_published BOOLEAN DEFAULT false,
+    published_at TIMESTAMP,
+    views INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_blog_posts_slug ON blog_posts(slug);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_author_id ON blog_posts(author_id);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_published ON blog_posts(is_published, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_created_at ON blog_posts(created_at DESC);
+
+-- Create trigger for blog_posts updated_at
+DROP TRIGGER IF EXISTS update_blog_posts_updated_at ON blog_posts;
+CREATE TRIGGER update_blog_posts_updated_at BEFORE UPDATE ON blog_posts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+

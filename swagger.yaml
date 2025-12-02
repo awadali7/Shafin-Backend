@@ -1,0 +1,1046 @@
+openapi: 3.0.0
+info:
+  title: E-Learning Platform API
+  description: |
+    API documentation for the E-Learning Platform backend.
+    
+    This platform provides access to YouTube unlisted videos with course request/approval workflow and progressive video unlocking.
+    
+    ## Authentication
+    Most endpoints require JWT authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your-token>
+    ```
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@yourdomain.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.yourdomain.com/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and registration
+  - name: Users
+    description: User profile and course management
+  - name: Courses
+    description: Course management
+  - name: Videos
+    description: Video management and access
+  - name: Course Requests
+    description: Course access request system
+  - name: Progress
+    description: Video progress and unlocking
+  - name: Admin
+    description: Admin dashboard and management
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check if the server is running
+      tags: []
+      responses:
+        '200':
+          description: Server is running
+          content:
+            application/json:
+              example:
+                status: OK
+                message: Server is running
+                timestamp: "2024-01-01T00:00:00.000Z"
+
+  /auth/register:
+    post:
+      summary: Register a new user
+      description: Create a new user account
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - first_name
+                - last_name
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                  example: Password123
+                first_name:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                  example: John
+                last_name:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                  example: Doe
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        type: object
+                      token:
+                        type: string
+                      refreshToken:
+                        type: string
+        '409':
+          description: User already exists
+        '400':
+          description: Validation error
+
+  /auth/login:
+    post:
+      summary: Login user
+      description: Authenticate user and get JWT token
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: Password123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        type: object
+                      token:
+                        type: string
+                      refreshToken:
+                        type: string
+        '401':
+          description: Invalid credentials
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      description: Get a new access token using refresh token
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed successfully
+        '401':
+          description: Invalid refresh token
+
+  /auth/forgot-password:
+    post:
+      summary: Request password reset
+      description: Send password reset email
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Password reset email sent (if user exists)
+
+  /auth/reset-password:
+    post:
+      summary: Reset password
+      description: Reset password using token from email
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - password
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Password reset successfully
+        '400':
+          description: Invalid or expired token
+
+  /users/profile:
+    get:
+      summary: Get user profile
+      description: Get current authenticated user's profile
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+        '401':
+          description: Unauthorized
+
+    put:
+      summary: Update user profile
+      description: Update current user's profile information
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Profile updated successfully
+        '401':
+          description: Unauthorized
+
+  /users/courses:
+    get:
+      summary: Get user's enrolled courses
+      description: Get all courses the user has access to
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of enrolled courses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+
+  /users/courses/{courseId}/progress:
+    get:
+      summary: Get course progress
+      description: Get detailed progress for a specific course
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Course progress data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      course:
+                        type: object
+                      hasAccess:
+                        type: boolean
+                      videos:
+                        type: array
+                      progress:
+                        type: object
+
+  /courses:
+    get:
+      summary: Get all courses
+      description: Get list of all active courses (public)
+      tags: [Courses]
+      responses:
+        '200':
+          description: List of courses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        slug:
+                          type: string
+                        price:
+                          type: number
+                        video_count:
+                          type: integer
+
+    post:
+      summary: Create course (Admin only)
+      description: Create a new course
+      tags: [Courses]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - slug
+                - price
+              properties:
+                name:
+                  type: string
+                  example: Diagnostic Tools
+                slug:
+                  type: string
+                  example: diagnostic-tools
+                description:
+                  type: string
+                price:
+                  type: number
+                  example: 49.99
+                cover_image:
+                  type: string
+                  format: uri
+                icon_name:
+                  type: string
+      responses:
+        '201':
+          description: Course created successfully
+        '401':
+          description: Unauthorized
+        '403':
+          description: Admin access required
+
+  /courses/{slug}:
+    get:
+      summary: Get course by slug
+      description: Get course details by slug
+      tags: [Courses]
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          example: diagnostic-tools
+      responses:
+        '200':
+          description: Course details
+        '404':
+          description: Course not found
+
+  /courses/{id}:
+    put:
+      summary: Update course (Admin only)
+      description: Update course information
+      tags: [Courses]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+                description:
+                  type: string
+                price:
+                  type: number
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Course updated successfully
+        '403':
+          description: Admin access required
+
+    delete:
+      summary: Delete course (Admin only)
+      description: Soft delete a course
+      tags: [Courses]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Course deleted successfully
+        '403':
+          description: Admin access required
+
+  /courses/{courseId}/videos:
+    get:
+      summary: Get course videos
+      description: Get all videos for a course with access status
+      tags: [Videos]
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of videos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      course:
+                        type: object
+                      videos:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            title:
+                              type: string
+                            video_url:
+                              type: string
+                            order_index:
+                              type: integer
+                            is_unlocked:
+                              type: boolean
+                            is_locked:
+                              type: boolean
+
+    post:
+      summary: Create video (Admin only)
+      description: Add a new video to a course
+      tags: [Videos]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - video_url
+                - order_index
+              properties:
+                title:
+                  type: string
+                  example: Intro to OBD Scanners
+                video_url:
+                  type: string
+                  format: uri
+                  example: https://www.youtube.com/watch?v=4dVDuy0JPpE
+                description:
+                  type: string
+                order_index:
+                  type: integer
+                  example: 0
+                pdfs:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      url:
+                        type: string
+                markdown:
+                  type: string
+      responses:
+        '201':
+          description: Video created successfully
+        '403':
+          description: Admin access required
+
+  /courses/{courseId}/videos/{videoId}:
+    get:
+      summary: Get video by ID
+      description: Get video details with access status
+      tags: [Videos]
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Video details
+        '404':
+          description: Video not found
+
+    put:
+      summary: Update video (Admin only)
+      description: Update video information
+      tags: [Videos]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                video_url:
+                  type: string
+                description:
+                  type: string
+                order_index:
+                  type: integer
+      responses:
+        '200':
+          description: Video updated successfully
+
+    delete:
+      summary: Delete video (Admin only)
+      description: Soft delete a video
+      tags: [Videos]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Video deleted successfully
+
+  /course-requests:
+    post:
+      summary: Create course access request
+      description: Request access to a course
+      tags: [Course Requests]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - course_id
+              properties:
+                course_id:
+                  type: string
+                  format: uuid
+                request_message:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '201':
+          description: Request created successfully
+        '409':
+          description: Request already exists or user already has access
+
+    get:
+      summary: Get user's course requests
+      description: Get all course requests for the authenticated user
+      tags: [Course Requests]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of course requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        status:
+                          type: string
+                          enum: [pending, approved, rejected]
+                        course_name:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+
+  /course-requests/{id}:
+    get:
+      summary: Get request by ID
+      description: Get details of a specific course request
+      tags: [Course Requests]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request details
+        '404':
+          description: Request not found
+
+  /course-requests/admin/all:
+    get:
+      summary: Get all requests (Admin only)
+      description: Get all course requests for admin review
+      tags: [Course Requests]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        '200':
+          description: List of all requests
+        '403':
+          description: Admin access required
+
+  /course-requests/{id}/approve:
+    put:
+      summary: Approve course request (Admin only)
+      description: Approve a course access request and set access period
+      tags: [Course Requests]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - access_start
+                - access_end
+              properties:
+                access_start:
+                  type: string
+                  format: date-time
+                  example: "2024-01-01T00:00:00Z"
+                access_end:
+                  type: string
+                  format: date-time
+                  example: "2024-12-31T23:59:59Z"
+      responses:
+        '200':
+          description: Request approved successfully
+        '403':
+          description: Admin access required
+        '404':
+          description: Request not found
+
+  /course-requests/{id}/reject:
+    put:
+      summary: Reject course request (Admin only)
+      description: Reject a course access request
+      tags: [Course Requests]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                admin_notes:
+                  type: string
+      responses:
+        '200':
+          description: Request rejected successfully
+        '403':
+          description: Admin access required
+
+  /progress/videos/{videoId}/watch:
+    post:
+      summary: Mark video as watched
+      description: Mark a video as watched by the user
+      tags: [Progress]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Video marked as watched
+        '403':
+          description: No access to course
+        '404':
+          description: Video not found
+
+  /progress/videos/{videoId}/unlock-next:
+    post:
+      summary: Unlock next video
+      description: Unlock the next video after watching current video and clicking next
+      tags: [Progress]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Next video unlocked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      next_video_id:
+                        type: string
+        '400':
+          description: Current video not watched yet
+        '403':
+          description: No access to course
+        '404':
+          description: Video not found or no next video
+
+  /progress/courses/{courseId}:
+    get:
+      summary: Get course progress
+      description: Get detailed progress for a course including watched/unlocked videos
+      tags: [Progress]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Course progress data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      has_access:
+                        type: boolean
+                      videos:
+                        type: array
+                      progress:
+                        type: object
+                        properties:
+                          total:
+                            type: integer
+                          watched:
+                            type: integer
+                          unlocked:
+                            type: integer
+                          percentage:
+                            type: integer
+
+  /admin/dashboard:
+    get:
+      summary: Get admin dashboard
+      description: Get dashboard statistics and recent requests
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      statistics:
+                        type: object
+                        properties:
+                          total_users:
+                            type: integer
+                          total_courses:
+                            type: integer
+                          total_videos:
+                            type: integer
+                          pending_requests:
+                            type: integer
+                          active_access:
+                            type: integer
+                      recent_requests:
+                        type: array
+        '403':
+          description: Admin access required
+
+  /admin/users:
+    get:
+      summary: Get all users (Admin only)
+      description: Get paginated list of all users
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [user, admin]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of users
+        '403':
+          description: Admin access required
+
+  /admin/requests:
+    get:
+      summary: Get all course requests (Admin only)
+      description: Get paginated list of all course requests
+      tags: [Admin]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of requests
+        '403':
+          description: Admin access required
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /auth/login or /auth/register
+
+
