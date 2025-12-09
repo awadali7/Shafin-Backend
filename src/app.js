@@ -29,8 +29,28 @@ const app = express();
 // Trust proxy for accurate IP detection (important for production with load balancers/proxies)
 app.set("trust proxy", true);
 
-// Security middleware
-app.use(helmet());
+// Security middleware with CSP configured to allow images from frontend
+const frontendUrls = process.env.FRONTEND_URL
+    ? Array.isArray(process.env.FRONTEND_URL)
+        ? process.env.FRONTEND_URL
+        : [process.env.FRONTEND_URL]
+    : ["http://localhost:3000", "http://localhost:3001"];
+
+app.use(
+    helmet({
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                imgSrc: ["'self'", "data:", "blob:", ...frontendUrls, "https:"],
+                scriptSrc: ["'self'"],
+                styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+                fontSrc: ["'self'", "https:", "data:"],
+                connectSrc: ["'self'", ...frontendUrls],
+            },
+        },
+        crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+);
 
 // CORS configuration
 app.use(
@@ -46,8 +66,26 @@ app.use(
 );
 
 // Body parsing middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// CRITICAL: Do NOT apply body parsers globally - they interfere with multipart/form-data
+// Apply body parsers only to routes that need JSON/URL-encoded parsing
+// Routes with file uploads (courses POST, uploads) use multer instead
+
+const jsonParser = express.json({ limit: "50mb" });
+const urlencodedParser = express.urlencoded({ extended: true, limit: "50mb" });
+
+// Apply body parsers ONLY to routes that don't use multipart
+app.use("/api/auth", jsonParser, urlencodedParser);
+app.use("/api/users", jsonParser, urlencodedParser);
+app.use("/api/admin", jsonParser, urlencodedParser);
+app.use("/api/course-requests", jsonParser, urlencodedParser);
+app.use("/api/progress", jsonParser, urlencodedParser);
+app.use("/api/notifications", jsonParser, urlencodedParser);
+app.use("/api/blogs", jsonParser, urlencodedParser);
+
+// DO NOT apply body parsers to these routes (they use multipart/form-data):
+// - /api/courses (POST uses multer for cover_image file uploads)
+// - /api/uploads/* (all routes use multer for file uploads)
+// - Video routes under /api/courses/:courseId/videos use JSON (no file uploads in route definition)
 
 // Serve uploaded files statically
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));

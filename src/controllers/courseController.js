@@ -1,5 +1,8 @@
 const { query } = require("../config/database");
 const { generateSlug } = require("../utils/helpers");
+const path = require("path");
+const fs = require("fs");
+const { v4: uuidv4 } = require("uuid");
 
 /**
  * Get all courses (public)
@@ -75,8 +78,108 @@ const getCourseBySlug = async (req, res, next) => {
  */
 const createCourse = async (req, res, next) => {
     try {
-        const { name, slug, description, price, cover_image, icon_name } =
-            req.body;
+        const {
+            name,
+            slug,
+            description,
+            price,
+            icon_name,
+            cover_image: coverImageData,
+        } = req.body;
+
+        // Handle cover image - supports multiple formats:
+        // 1. File upload via multipart/form-data (req.file)
+        // 2. Base64 encoded image in JSON (req.body.cover_image as base64 string)
+        // 3. URL string in JSON (req.body.cover_image as URL)
+        let cover_image = null;
+
+        if (req.file) {
+            // Case 1: File uploaded via multipart/form-data
+            const baseUrl = process.env.BACKEND_URL || "http://localhost:5001";
+            cover_image = `${baseUrl}/uploads/images/${req.file.filename}`;
+        } else if (coverImageData) {
+            // Check if it's a base64 encoded image (starts with data:image/)
+            if (coverImageData.startsWith("data:image/")) {
+                // Case 2: Base64 encoded image in JSON
+                try {
+                    const imagesDir = path.join(
+                        __dirname,
+                        "../../uploads/images"
+                    );
+                    if (!fs.existsSync(imagesDir)) {
+                        fs.mkdirSync(imagesDir, { recursive: true });
+                    }
+
+                    // Extract base64 data and mime type
+                    const matches = coverImageData.match(
+                        /^data:image\/(\w+);base64,(.+)$/
+                    );
+                    if (!matches) {
+                        return res.status(400).json({
+                            success: false,
+                            message:
+                                "Invalid base64 image format. Expected format: data:image/png;base64,...",
+                        });
+                    }
+
+                    const mimeType = matches[1];
+                    const base64Data = matches[2];
+
+                    // Validate image type
+                    const allowedTypes = [
+                        "jpeg",
+                        "jpg",
+                        "png",
+                        "gif",
+                        "webp",
+                        "svg+xml",
+                    ];
+                    if (!allowedTypes.includes(mimeType)) {
+                        return res.status(400).json({
+                            success: false,
+                            message:
+                                "Invalid image type. Only JPEG, PNG, GIF, WebP, and SVG are allowed.",
+                        });
+                    }
+
+                    // Generate unique filename
+                    const extension =
+                        mimeType === "svg+xml"
+                            ? "svg"
+                            : mimeType === "jpeg"
+                            ? "jpg"
+                            : mimeType;
+                    const filename = `${uuidv4()}.${extension}`;
+                    const filePath = path.join(imagesDir, filename);
+
+                    // Decode and save base64 image
+                    const imageBuffer = Buffer.from(base64Data, "base64");
+                    fs.writeFileSync(filePath, imageBuffer);
+
+                    // Generate URL
+                    const baseUrl =
+                        process.env.BACKEND_URL || "http://localhost:5001";
+                    cover_image = `${baseUrl}/uploads/images/${filename}`;
+                } catch (error) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Failed to process base64 image: ${error.message}`,
+                    });
+                }
+            } else if (
+                coverImageData.startsWith("http://") ||
+                coverImageData.startsWith("https://")
+            ) {
+                // Case 3: URL string provided
+                cover_image = coverImageData;
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Invalid cover_image format. Provide either a base64 encoded image (data:image/...;base64,...), a URL, or upload a file via multipart/form-data.",
+                });
+            }
+        }
 
         // Check if slug already exists
         const slugCheck = await query(
@@ -99,7 +202,7 @@ const createCourse = async (req, res, next) => {
                 name,
                 slug,
                 description || null,
-                price,
+                parseFloat(price) || 0,
                 cover_image || null,
                 icon_name || null,
                 req.user.id,
