@@ -21,4 +21,3 @@ router.put("/:id", authenticate, isAdmin, blogController.updateBlogPost);
 router.delete("/:id", authenticate, isAdmin, blogController.deleteBlogPost);
 
 module.exports = router;
-

@@ -8,6 +8,7 @@
         "dev": "nodemon server.js",
         "test": "jest",
         "db:migrate": "node src/utils/migrate.js",
+        "db:migrate:kyc": "node src/utils/migrateKyc.js",
         "db:seed": "node src/utils/seed.js",
         "create-admin": "node src/utils/createAdmin.js"
     },

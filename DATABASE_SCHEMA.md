@@ -189,6 +189,38 @@ Stores password reset tokens.
 
 ---
 
+## Table: `kyc_verifications`
+
+Stores KYC (Know Your Customer) verification information for users.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique KYC identifier |
+| user_id | UUID | FOREIGN KEY → users.id, UNIQUE, ON DELETE CASCADE | User who submitted KYC |
+| first_name | VARCHAR(100) | NOT NULL | First name from KYC |
+| last_name | VARCHAR(100) | NOT NULL | Last name from KYC |
+| address | TEXT | NOT NULL | User's address |
+| contact_number | VARCHAR(20) | NOT NULL | Contact phone number |
+| whatsapp_number | VARCHAR(20) | NOT NULL | WhatsApp phone number |
+| id_proof_url | VARCHAR(500) | NOT NULL | URL to uploaded ID proof document |
+| profile_photo_url | VARCHAR(500) | NOT NULL | URL to uploaded profile photo |
+| status | VARCHAR(20) | NOT NULL, DEFAULT 'pending', CHECK (status IN ('pending', 'verified', 'rejected')) | KYC verification status |
+| rejection_reason | TEXT | | Reason for rejection (if rejected) |
+| verified_by | UUID | FOREIGN KEY → users.id | Admin who verified/rejected |
+| verified_at | TIMESTAMP | | When KYC was verified/rejected |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | KYC submission time |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Last update time |
+
+### Indexes
+- `idx_kyc_verifications_user_id` on `user_id`
+- `idx_kyc_verifications_status` on `status`
+
+### Constraints
+- One KYC record per user (UNIQUE constraint on `user_id`)
+- Course requests require verified KYC status
+
+---
+
 ## Table: `email_logs` (Optional)
 
 Logs all sent emails for debugging and tracking.

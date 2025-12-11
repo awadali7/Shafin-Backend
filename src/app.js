@@ -17,6 +17,7 @@ const adminRoutes = require("./routes/admin");
 const notificationRoutes = require("./routes/notifications");
 const blogRoutes = require("./routes/blogs");
 const uploadRoutes = require("./routes/uploads");
+const kycRoutes = require("./routes/kyc");
 
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
@@ -53,15 +54,51 @@ app.use(
 );
 
 // CORS configuration
+// Support multiple origins: production frontend + localhost for development
+const getAllowedOrigins = () => {
+    const origins = ["http://localhost:3000", "http://localhost:3001"];
+
+    if (process.env.FRONTEND_URL) {
+        // Handle comma-separated list of URLs
+        const frontendUrls = process.env.FRONTEND_URL.split(",").map((url) =>
+            url.trim()
+        );
+        origins.push(...frontendUrls);
+    }
+
+    // Add common production URLs
+    if (process.env.NODE_ENV === "production") {
+        origins.push("https://diagtools.in", "https://www.diagtools.in");
+    }
+
+    // Remove duplicates
+    return [...new Set(origins)];
+};
+
 app.use(
     cors({
-        origin: process.env.FRONTEND_URL || [
-            "http://localhost:3000",
-            "http://localhost:3001",
-        ],
+        origin: (origin, callback) => {
+            const allowedOrigins = getAllowedOrigins();
+
+            // Allow requests with no origin (like mobile apps or Postman)
+            if (!origin) {
+                return callback(null, true);
+            }
+
+            // Check if origin is in allowed list
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                // Log for debugging
+                console.warn(`CORS blocked origin: ${origin}`);
+                console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
+                callback(new Error("Not allowed by CORS"));
+            }
+        },
         credentials: true,
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization"],
+        exposedHeaders: ["Content-Range", "X-Content-Range"],
     })
 );
 
@@ -120,6 +157,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use("/api/kyc", kycRoutes);
 
 // 404 handler
 app.use((req, res) => {
