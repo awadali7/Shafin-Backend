@@ -31,18 +31,34 @@ const app = express();
 app.set("trust proxy", true);
 
 // Security middleware with CSP configured to allow images from frontend
-const frontendUrls = process.env.FRONTEND_URL
-    ? Array.isArray(process.env.FRONTEND_URL)
-        ? process.env.FRONTEND_URL
-        : [process.env.FRONTEND_URL]
-    : ["http://localhost:3000", "http://localhost:3001"];
+const getFrontendUrls = () => {
+    const urls = ["http://localhost:3000", "http://localhost:3001"];
+
+    if (process.env.FRONTEND_URL) {
+        // Handle comma-separated list of URLs
+        const frontendUrls = process.env.FRONTEND_URL.split(",").map((url) =>
+            url.trim()
+        );
+        urls.push(...frontendUrls);
+    }
+
+    // Add common production URLs
+    if (process.env.NODE_ENV === "production") {
+        urls.push("https://diagtools.in", "https://www.diagtools.in");
+    }
+
+    // Remove duplicates
+    return [...new Set(urls)];
+};
+
+const frontendUrls = getFrontendUrls();
 
 app.use(
     helmet({
         contentSecurityPolicy: {
             directives: {
                 defaultSrc: ["'self'"],
-                imgSrc: ["'self'", "data:", "blob:", ...frontendUrls, "https:"],
+                imgSrc: ["'self'", "data:", "blob:", "https:", ...frontendUrls],
                 scriptSrc: ["'self'"],
                 styleSrc: ["'self'", "'unsafe-inline'", "https:"],
                 fontSrc: ["'self'", "https:", "data:"],
