@@ -1,5 +1,5 @@
 const { query } = require("../config/database");
-const { generateSlug } = require("../utils/helpers");
+const { generateSlug, normalizeImageUrl } = require("../utils/helpers");
 
 /**
  * Get all published blog posts (public)
@@ -59,9 +59,15 @@ const getAllBlogPosts = async (req, res, next) => {
         const countResult = await query(countQuery, countParams);
         const total = parseInt(countResult.rows[0].total);
 
+        // Normalize image URLs before returning
+        const blogPosts = result.rows.map((post) => ({
+            ...post,
+            cover_image: normalizeImageUrl(post.cover_image),
+        }));
+
         res.json({
             success: true,
-            data: result.rows,
+            data: blogPosts,
             pagination: {
                 total,
                 limit: limitNum,
@@ -146,10 +152,16 @@ const getAllBlogPostsAdmin = async (req, res, next) => {
         const countResult = await query(countQuery, countParams);
         const total = parseInt(countResult.rows[0].total);
 
+        // Normalize image URLs before returning
+        const blogPosts = result.rows.map((post) => ({
+            ...post,
+            cover_image: normalizeImageUrl(post.cover_image),
+        }));
+
         res.json({
             success: true,
             data: {
-                data: result.rows,
+                data: blogPosts,
                 pagination: {
                     total,
                     limit: limitNum,
@@ -203,12 +215,16 @@ const getBlogPostBySlug = async (req, res, next) => {
             result.rows[0].id,
         ]);
 
+        // Normalize image URL before returning
+        const blogPost = {
+            ...result.rows[0],
+            views: result.rows[0].views + 1, // Return incremented view count
+            cover_image: normalizeImageUrl(result.rows[0].cover_image),
+        };
+
         res.json({
             success: true,
-            data: {
-                ...result.rows[0],
-                views: result.rows[0].views + 1, // Return incremented view count
-            },
+            data: blogPost,
         });
     } catch (error) {
         next(error);
@@ -251,9 +267,15 @@ const getBlogPostById = async (req, res, next) => {
             });
         }
 
+        // Normalize image URL before returning
+        const blogPost = {
+            ...result.rows[0],
+            cover_image: normalizeImageUrl(result.rows[0].cover_image),
+        };
+
         res.json({
             success: true,
-            data: result.rows[0],
+            data: blogPost,
         });
     } catch (error) {
         next(error);

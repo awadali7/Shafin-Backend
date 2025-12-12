@@ -1,5 +1,6 @@
 const { query } = require("../config/database");
 const { REQUEST_STATUS } = require("../utils/constants");
+const { normalizeImageUrl } = require("../utils/helpers");
 const { createNotification } = require("./notificationController");
 
 /**
@@ -194,7 +195,10 @@ const getDashboard = async (req, res, next) => {
                     completion_percentage: adminCompletionPercentage,
                 },
                 current_video: adminCurrentVideoResult.rows[0] || null,
-                latest_videos: latestVideosResult.rows,
+                latest_videos: latestVideosResult.rows.map((video) => ({
+                    ...video,
+                    cover_image: normalizeImageUrl(video.cover_image),
+                })),
                 notifications: notifications.slice(0, 10),
             },
         });

@@ -1,5 +1,5 @@
 const { query } = require("../config/database");
-const { generateSlug } = require("../utils/helpers");
+const { generateSlug, normalizeImageUrl } = require("../utils/helpers");
 const path = require("path");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
@@ -25,9 +25,15 @@ const getAllCourses = async (req, res, next) => {
              ORDER BY created_at DESC`
         );
 
+        // Normalize image URLs before returning
+        const courses = result.rows.map((course) => ({
+            ...course,
+            cover_image: normalizeImageUrl(course.cover_image),
+        }));
+
         res.json({
             success: true,
-            data: result.rows,
+            data: courses,
         });
     } catch (error) {
         next(error);
@@ -64,9 +70,15 @@ const getCourseBySlug = async (req, res, next) => {
             });
         }
 
+        // Normalize image URL before returning
+        const course = {
+            ...result.rows[0],
+            cover_image: normalizeImageUrl(result.rows[0].cover_image),
+        };
+
         res.json({
             success: true,
-            data: result.rows[0],
+            data: course,
         });
     } catch (error) {
         next(error);

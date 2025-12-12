@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const { query } = require("../config/database");
+const { normalizeImageUrl } = require("../utils/helpers");
 
 /**
  * Get current user profile
@@ -114,9 +115,15 @@ const getUserCourses = async (req, res, next) => {
             [req.user.id]
         );
 
+        // Normalize image URLs before returning
+        const courses = result.rows.map((course) => ({
+            ...course,
+            cover_image: normalizeImageUrl(course.cover_image),
+        }));
+
         res.json({
             success: true,
-            data: result.rows,
+            data: courses,
         });
     } catch (error) {
         next(error);
@@ -365,6 +372,7 @@ const getUserDashboard = async (req, res, next) => {
 
                 return {
                     ...course,
+                    cover_image: normalizeImageUrl(course.cover_image),
                     progress: {
                         total: parseInt(progress.total_videos),
                         watched: parseInt(progress.watched_videos),
@@ -384,6 +392,12 @@ const getUserDashboard = async (req, res, next) => {
                   )
                 : 0;
 
+        // Normalize image URLs in latest videos
+        const latestVideos = latestVideosResult.rows.map((video) => ({
+            ...video,
+            cover_image: normalizeImageUrl(video.cover_image),
+        }));
+
         res.json({
             success: true,
             data: {
@@ -395,7 +409,7 @@ const getUserDashboard = async (req, res, next) => {
                 },
                 courses: coursesWithProgress,
                 current_video: currentVideoResult.rows[0] || null,
-                latest_videos: latestVideosResult.rows,
+                latest_videos: latestVideos,
                 notifications: notificationsResult.rows.map((notif) => ({
                     id: notif.id,
                     type:

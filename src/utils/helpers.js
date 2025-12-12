@@ -66,6 +66,51 @@ const formatYouTubeEmbedUrl = (url) => {
     return `https://www.youtube.com/embed/${videoId}`;
 };
 
+/**
+ * Normalize image URL - transforms localhost URLs to production backend URL
+ */
+const normalizeImageUrl = (url) => {
+    if (!url) return url;
+
+    // If it's already a full external URL (not localhost), return as is
+    if (url.startsWith("https://") && !url.includes("localhost")) {
+        return url;
+    }
+
+    // If it's a localhost URL, transform it
+    if (url.includes("localhost") || url.startsWith("http://localhost")) {
+        const backendUrl =
+            process.env.BACKEND_URL ||
+            process.env.API_URL ||
+            "https://api.diagtools.in";
+
+        try {
+            // Extract the path from the URL
+            const urlObj = new URL(url);
+            const path = urlObj.pathname;
+            // Construct new URL
+            return `${backendUrl}${path}`;
+        } catch (e) {
+            // If URL parsing fails, try to extract path manually
+            const pathMatch = url.match(/\/uploads\/.*$/);
+            if (pathMatch) {
+                return `${backendUrl}${pathMatch[0]}`;
+            }
+        }
+    }
+
+    // If it's a relative path starting with /uploads/, prepend backend URL
+    if (url.startsWith("/uploads/")) {
+        const backendUrl =
+            process.env.BACKEND_URL ||
+            process.env.API_URL ||
+            "https://api.diagtools.in";
+        return `${backendUrl}${url}`;
+    }
+
+    return url;
+};
+
 module.exports = {
     generateSlug,
     formatDate,
@@ -75,4 +120,5 @@ module.exports = {
     sanitizeInput,
     extractYouTubeId,
     formatYouTubeEmbedUrl,
+    normalizeImageUrl,
 };

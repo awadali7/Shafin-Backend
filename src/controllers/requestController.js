@@ -4,6 +4,7 @@ const {
     sendCourseAccessRejectedEmail,
 } = require("../config/email");
 const { REQUEST_STATUS } = require("../utils/constants");
+const { normalizeImageUrl } = require("../utils/helpers");
 const { createNotification } = require("./notificationController");
 
 /**
@@ -126,9 +127,15 @@ const getUserRequests = async (req, res, next) => {
             [userId]
         );
 
+        // Normalize image URLs before returning
+        const requests = result.rows.map((request) => ({
+            ...request,
+            course_cover_image: normalizeImageUrl(request.course_cover_image),
+        }));
+
         res.json({
             success: true,
-            data: result.rows,
+            data: requests,
         });
     } catch (error) {
         next(error);
@@ -172,9 +179,17 @@ const getRequestById = async (req, res, next) => {
             });
         }
 
+        // Normalize image URL before returning
+        const request = {
+            ...result.rows[0],
+            course_cover_image: normalizeImageUrl(
+                result.rows[0].course_cover_image
+            ),
+        };
+
         res.json({
             success: true,
-            data: result.rows[0],
+            data: request,
         });
     } catch (error) {
         next(error);
