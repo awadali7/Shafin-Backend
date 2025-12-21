@@ -17,6 +17,9 @@ const adminRoutes = require("./routes/admin");
 const notificationRoutes = require("./routes/notifications");
 const blogRoutes = require("./routes/blogs");
 const uploadRoutes = require("./routes/uploads");
+const productRoutes = require("./routes/products");
+const orderRoutes = require("./routes/orders");
+const paymentRoutes = require("./routes/payments");
 const kycRoutes = require("./routes/kyc");
 
 // Import middleware
@@ -134,10 +137,13 @@ app.use("/api/course-requests", jsonParser, urlencodedParser);
 app.use("/api/progress", jsonParser, urlencodedParser);
 app.use("/api/notifications", jsonParser, urlencodedParser);
 app.use("/api/blogs", jsonParser, urlencodedParser);
+app.use("/api/orders", jsonParser, urlencodedParser);
+app.use("/api/payments", jsonParser, urlencodedParser);
 
 // DO NOT apply body parsers to these routes (they use multipart/form-data):
 // - /api/courses (POST uses multer for cover_image file uploads)
 // - /api/uploads/* (all routes use multer for file uploads)
+// - /api/products/admin (uses multer for cover_image/digital_file uploads)
 // - Video routes under /api/courses/:courseId/videos use JSON (no file uploads in route definition)
 
 // Serve uploaded files statically
@@ -174,6 +180,9 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/uploads", uploadRoutes);
 app.use("/api/kyc", kycRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // 404 handler
 app.use((req, res) => {

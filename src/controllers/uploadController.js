@@ -66,6 +66,11 @@ const fileFilter = (req, file, cb) => {
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "text/plain",
             "text/csv",
+            // Digital product archives
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/vnd.rar",
+            "application/x-rar-compressed",
         ];
         if (allowedMimes.includes(file.mimetype)) {
             cb(null, true);
@@ -89,6 +94,17 @@ const fileFilter = (req, file, cb) => {
             "application/pdf",
             "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/plain",
+            "text/csv",
+            // Digital product archives
+            "application/zip",
+            "application/x-zip-compressed",
+            "application/vnd.rar",
+            "application/x-rar-compressed",
         ];
         if (allowedMimes.includes(file.mimetype)) {
             cb(null, true);

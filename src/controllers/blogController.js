@@ -67,12 +67,14 @@ const getAllBlogPosts = async (req, res, next) => {
 
         res.json({
             success: true,
-            data: blogPosts,
-            pagination: {
-                total,
-                limit: limitNum,
-                offset: offsetNum,
-                hasMore: offsetNum + limitNum < total,
+            data: {
+                data: blogPosts,
+                pagination: {
+                    total,
+                    limit: limitNum,
+                    offset: offsetNum,
+                    hasMore: offsetNum + limitNum < total,
+                },
             },
         });
     } catch (error) {
@@ -284,6 +286,7 @@ const getBlogPostById = async (req, res, next) => {
 
 /**
  * Create blog post (admin only)
+ * Note: Content field supports HTML including images, iframes, videos, and other rich media
  */
 const createBlogPost = async (req, res, next) => {
     try {
@@ -296,6 +299,8 @@ const createBlogPost = async (req, res, next) => {
                 message: "Title and content are required",
             });
         }
+
+        // Content is stored as-is to support HTML, images, iframes, videos, etc.
 
         // Generate slug from title
         const slug = generateSlug(title);
@@ -342,11 +347,14 @@ const createBlogPost = async (req, res, next) => {
 
 /**
  * Update blog post (admin only)
+ * Note: Content field supports HTML including images, iframes, videos, and other rich media
  */
 const updateBlogPost = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { title, excerpt, content, cover_image, is_published } = req.body;
+
+        // Content is stored as-is to support HTML, images, iframes, videos, etc.
 
         // Check if post exists
         const postCheck = await query(
