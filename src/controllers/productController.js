@@ -17,6 +17,41 @@ function toBoolean(value) {
     return undefined;
 }
 
+function normalizeImagesArray(images) {
+    if (!images) return null;
+    try {
+        let parsed = images;
+        if (typeof images === 'string') {
+            parsed = JSON.parse(images);
+        }
+        if (Array.isArray(parsed)) {
+            return parsed.map(img => img ? normalizeImageUrl(img) : img).filter(img => img);
+        }
+    } catch (e) {
+        // If it's already an array, try to normalize directly
+        if (Array.isArray(images)) {
+            return images.map(img => img ? normalizeImageUrl(img) : img).filter(img => img);
+        }
+    }
+    return null;
+}
+
+function normalizeVideosArray(videos) {
+    if (!videos) return null;
+    try {
+        const parsed = typeof videos === 'string' ? JSON.parse(videos) : videos;
+        if (Array.isArray(parsed)) {
+            return parsed.map(video => ({
+                ...video,
+                thumbnail: video.thumbnail ? normalizeImageUrl(video.thumbnail) : video.thumbnail
+            }));
+        }
+    } catch (e) {
+        // ignore
+    }
+    return null;
+}
+
 /**
  * Public: List products
  * Supports: ?q= ?category= ?type= (physical|digital)
@@ -57,6 +92,8 @@ const getAllProducts = async (req, res, next) => {
                 category,
                 product_type,
                 cover_image,
+                images,
+                videos,
                 digital_file_name,
                 digital_file_format,
                 stock_quantity,
@@ -75,6 +112,8 @@ const getAllProducts = async (req, res, next) => {
             ...p,
             type: p.product_type,
             cover_image: normalizeImageUrl(p.cover_image),
+            images: normalizeImagesArray(p.images) || [],
+            videos: normalizeVideosArray(p.videos) || [],
             in_stock:
                 p.product_type === "digital"
                     ? true
@@ -104,6 +143,8 @@ const getProductBySlug = async (req, res, next) => {
                 category,
                 product_type,
                 cover_image,
+                images,
+                videos,
                 digital_file_name,
                 digital_file_format,
                 stock_quantity,
@@ -132,6 +173,8 @@ const getProductBySlug = async (req, res, next) => {
                 ...p,
                 type: p.product_type,
                 cover_image: normalizeImageUrl(p.cover_image),
+                images: normalizeImagesArray(p.images) || [],
+                videos: normalizeVideosArray(p.videos) || [],
                 in_stock:
                     p.product_type === "digital"
                         ? true
@@ -158,6 +201,8 @@ const adminGetAllProducts = async (req, res, next) => {
                 category,
                 product_type,
                 cover_image,
+                images,
+                videos,
                 digital_file_name,
                 digital_file_format,
                 stock_quantity,
@@ -174,6 +219,8 @@ const adminGetAllProducts = async (req, res, next) => {
             ...p,
             type: p.product_type,
             cover_image: normalizeImageUrl(p.cover_image),
+            images: normalizeImagesArray(p.images) || [],
+            videos: normalizeVideosArray(p.videos) || [],
             in_stock:
                 p.product_type === "digital"
                     ? true
@@ -204,6 +251,8 @@ const adminCreateProduct = async (req, res, next) => {
             stock_quantity,
             rating,
             reviews_count,
+            images,
+            videos,
         } = req.body || {};
 
         const type = (product_type || req.body?.type || "").toString().trim();
@@ -222,6 +271,9 @@ const adminCreateProduct = async (req, res, next) => {
 
         const coverImageFile = req.files?.cover_image?.[0];
         const digitalFile = req.files?.digital_file?.[0];
+        const imageFiles = req.files?.images || [];
+        const videoFiles = req.files?.videos || [];
+        const videoThumbnailFiles = req.files?.video_thumbnails || [];
 
         if (type === "digital" && !digitalFile) {
             return res.status(400).json({
@@ -235,6 +287,76 @@ const adminCreateProduct = async (req, res, next) => {
             ? `${baseUrl}/uploads/images/${coverImageFile.filename}`
             : null;
 
+        // Process uploaded image files to URLs
+        const uploadedImageUrls = imageFiles.map(file => 
+            `${baseUrl}/uploads/images/${file.filename}`
+        );
+
+        // Process uploaded video files and thumbnails
+        // Note: Videos are stored as files, but we need to handle them differently
+        // For now, we'll store video file paths and serve them via a download/stream endpoint
+        // Or we can store them as URLs if they're meant to be embedded
+        const videoThumbnailUrls = videoThumbnailFiles.map(file => 
+            `${baseUrl}/uploads/images/${file.filename}`
+        );
+
+        // Combine uploaded images with any existing image URLs from JSON
+        let allImageUrls = [...uploadedImageUrls];
+        if (images !== undefined) {
+            try {
+                const parsedImages = typeof images === 'string' ? JSON.parse(images) : images;
+                if (Array.isArray(parsedImages)) {
+                    // Filter out base64 data URLs (they're too large) and keep only regular URLs
+                    const urlImages = parsedImages.filter(img => 
+                        img && typeof img === 'string' && !img.startsWith('data:')
+                    );
+                    allImageUrls = [...allImageUrls, ...urlImages];
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        // If cover_image was uploaded, add it to images array if not already there
+        if (coverImageUrl && !allImageUrls.includes(coverImageUrl)) {
+            allImageUrls.unshift(coverImageUrl); // Add cover image as first image
+        }
+
+        // Process videos - combine uploaded videos with JSON videos
+        let allVideos = [];
+        
+        // Handle uploaded video files
+        videoFiles.forEach((videoFile, index) => {
+            const videoTitle = req.body[`video_titles[${index}]`] || req.body[`video_titles_${index}`] || `Video ${index + 1}`;
+            const thumbnailUrl = videoThumbnailUrls[index] || null;
+            // For now, store video file path - you may want to serve videos via a streaming endpoint
+            const videoUrl = `${baseUrl}/uploads/videos/${videoFile.filename}`;
+            allVideos.push({
+                title: videoTitle,
+                url: videoUrl,
+                thumbnail: thumbnailUrl
+            });
+        });
+
+        // Add videos from JSON (if any)
+        if (videos !== undefined) {
+            try {
+                const parsedVideos = typeof videos === 'string' ? JSON.parse(videos) : videos;
+                if (Array.isArray(parsedVideos)) {
+                    // Filter out base64 data URLs and keep only regular URLs
+                    const urlVideos = parsedVideos.filter(video => 
+                        video && video.url && typeof video.url === 'string' && !video.url.startsWith('data:')
+                    );
+                    allVideos = [...allVideos, ...urlVideos];
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        const imagesJson = allImageUrls.length > 0 ? JSON.stringify(allImageUrls) : null;
+        const videosJson = allVideos.length > 0 ? JSON.stringify(allVideos) : null;
+
         const insert = await query(
             `INSERT INTO products (
                 name,
@@ -244,6 +366,8 @@ const adminCreateProduct = async (req, res, next) => {
                 category,
                 product_type,
                 cover_image,
+                images,
+                videos,
                 digital_file_storage_path,
                 digital_file_name,
                 digital_file_format,
@@ -252,7 +376,7 @@ const adminCreateProduct = async (req, res, next) => {
                 reviews_count,
                 created_by
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
             )
             RETURNING
                 id,
@@ -263,6 +387,8 @@ const adminCreateProduct = async (req, res, next) => {
                 category,
                 product_type,
                 cover_image,
+                images,
+                videos,
                 digital_file_name,
                 digital_file_format,
                 stock_quantity,
@@ -279,6 +405,8 @@ const adminCreateProduct = async (req, res, next) => {
                 category || null,
                 type,
                 coverImageUrl,
+                imagesJson,
+                videosJson,
                 digitalFile ? digitalFile.path : null,
                 digitalFile ? digitalFile.originalname : null,
                 digitalFile
@@ -301,6 +429,8 @@ const adminCreateProduct = async (req, res, next) => {
                 ...p,
                 type: p.product_type,
                 cover_image: normalizeImageUrl(p.cover_image),
+                images: normalizeImagesArray(p.images) || [],
+                videos: normalizeVideosArray(p.videos) || [],
                 in_stock:
                     p.product_type === "digital"
                         ? true
@@ -345,6 +475,8 @@ const adminUpdateProduct = async (req, res, next) => {
             rating,
             reviews_count,
             is_active,
+            images,
+            videos,
         } = req.body || {};
 
         const nextType = (product_type || type || current.product_type || "")
@@ -427,6 +559,26 @@ const adminUpdateProduct = async (req, res, next) => {
         if (digitalFormat !== undefined)
             setIfDefined("digital_file_format", digitalFormat);
 
+        // Handle images array (JSONB)
+        if (images !== undefined) {
+            try {
+                const imagesJson = Array.isArray(images) ? JSON.stringify(images) : images;
+                setIfDefined("images", imagesJson);
+            } catch (e) {
+                // ignore invalid JSON
+            }
+        }
+
+        // Handle videos array (JSONB)
+        if (videos !== undefined) {
+            try {
+                const videosJson = Array.isArray(videos) ? JSON.stringify(videos) : videos;
+                setIfDefined("videos", videosJson);
+            } catch (e) {
+                // ignore invalid JSON
+            }
+        }
+
         const activeBool = toBoolean(is_active);
         if (activeBool !== undefined) setIfDefined("is_active", activeBool);
 
@@ -448,6 +600,8 @@ const adminUpdateProduct = async (req, res, next) => {
                 category,
                 product_type,
                 cover_image,
+                images,
+                videos,
                 digital_file_name,
                 digital_file_format,
                 stock_quantity,
@@ -466,6 +620,8 @@ const adminUpdateProduct = async (req, res, next) => {
                 ...p,
                 type: p.product_type,
                 cover_image: normalizeImageUrl(p.cover_image),
+                images: normalizeImagesArray(p.images) || [],
+                videos: normalizeVideosArray(p.videos) || [],
                 in_stock:
                     p.product_type === "digital"
                         ? true

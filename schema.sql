@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     email_verified BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
+    terms_accepted_at TIMESTAMP, -- Required for course purchase
     last_login_at TIMESTAMP,
     last_login_ip VARCHAR(45),
     last_login_device JSONB,
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_terms_accepted ON users(terms_accepted_at);
 
 -- Create courses table
 CREATE TABLE IF NOT EXISTS courses (
@@ -60,6 +62,9 @@ CREATE INDEX IF NOT EXISTS idx_videos_order_index ON videos(course_id, order_ind
 CREATE INDEX IF NOT EXISTS idx_videos_is_active ON videos(is_active);
 
 -- Create course_requests table
+-- NOTE: This table is for admin-granted course access requests (optional feature)
+-- Course purchases use direct payment flow and do NOT use this table
+-- Purchased courses are tracked via course_orders table
 CREATE TABLE IF NOT EXISTS course_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -79,15 +84,18 @@ CREATE INDEX IF NOT EXISTS idx_course_requests_status ON course_requests(status)
 CREATE INDEX IF NOT EXISTS idx_course_requests_user_course ON course_requests(user_id, course_id);
 
 -- Create course_access table
+-- Stores course access granted via:
+-- 1. Direct purchase (request_id = NULL, granted_by = user who purchased)
+-- 2. Admin-approved request (request_id = course_requests.id, granted_by = admin)
 CREATE TABLE IF NOT EXISTS course_access (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-    request_id UUID REFERENCES course_requests(id),
+    request_id UUID REFERENCES course_requests(id), -- NULL for purchased courses
     access_start TIMESTAMP NOT NULL,
     access_end TIMESTAMP NOT NULL,
     is_active BOOLEAN DEFAULT true,
-    granted_by UUID REFERENCES users(id),
+    granted_by UUID REFERENCES users(id), -- User who purchased or admin who approved
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (access_end > access_start)
@@ -292,6 +300,8 @@ CREATE TABLE IF NOT EXISTS products (
     category VARCHAR(255),
     product_type VARCHAR(20) NOT NULL CHECK (product_type IN ('physical', 'digital')),
     cover_image VARCHAR(500),
+    images JSONB DEFAULT '[]'::jsonb,
+    videos JSONB DEFAULT '[]'::jsonb,
 
     -- Digital file metadata (file stored privately on disk; served via authenticated endpoint)
     digital_file_storage_path VARCHAR(1000),
@@ -314,6 +324,8 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE INDEX IF NOT EXISTS idx_products_slug ON products(slug);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_images ON products USING GIN (images);
+CREATE INDEX IF NOT EXISTS idx_products_videos ON products USING GIN (videos);
 
 DROP TRIGGER IF EXISTS update_products_updated_at ON products;
 CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products
@@ -382,6 +394,22 @@ CREATE TABLE IF NOT EXISTS product_entitlements (
 
 CREATE INDEX IF NOT EXISTS idx_product_entitlements_user ON product_entitlements(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_product_entitlements_product ON product_entitlements(product_id);
+
+-- Create course_orders table to track course purchases
+-- This is separate from product orders (order_items table)
+-- Course purchases use direct payment flow, not request-based approval
+CREATE TABLE IF NOT EXISTS course_orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    course_name VARCHAR(255) NOT NULL,
+    course_price DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_course_orders_order_id ON course_orders(order_id);
+CREATE INDEX IF NOT EXISTS idx_course_orders_course_id ON course_orders(course_id);
 
 -- Create kyc_verifications table
 CREATE TABLE IF NOT EXISTS kyc_verifications (

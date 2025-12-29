@@ -431,10 +431,34 @@ const getUserDashboard = async (req, res, next) => {
     }
 };
 
+/**
+ * Accept Terms and Conditions
+ */
+const acceptTerms = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+
+        await query(
+            `UPDATE users 
+             SET terms_accepted_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [userId]
+        );
+
+        res.json({
+            success: true,
+            message: "Terms and conditions accepted successfully",
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getProfile,
     updateProfile,
     getUserCourses,
     getCourseProgress,
     getUserDashboard,
+    acceptTerms,
 };

@@ -106,4 +106,16 @@ router.post(
 router.put("/:id", authenticate, isAdmin, courseController.updateCourse);
 router.delete("/:id", authenticate, isAdmin, courseController.deleteCourse);
 
+// Course purchase route (authenticated users)
+router.post("/:id/purchase", authenticate, courseController.purchaseCourse);
+
+// Grant course access (Admin only)
+router.post(
+    "/:id/grant-access",
+    authenticate,
+    isAdmin,
+    express.json(),
+    courseController.grantCourseAccess
+);
+
 module.exports = router;

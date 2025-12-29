@@ -276,12 +276,65 @@ const verifyRazorpayPayment = async (req, res, next) => {
             [order.id, razorpay_payment_id]
         );
 
-        await grantDigitalEntitlementsForOrder(
-            client,
-            order.id,
-            order.user_id,
-            req.user.id
+        // Grant entitlements based on order type
+        // Check if this is a course order or product order
+        const courseOrderCheck = await client.query(
+            `SELECT course_id FROM course_orders WHERE order_id = $1`,
+            [order.id]
         );
+
+        if (courseOrderCheck.rows.length > 0) {
+            // This is a course order - grant course access
+            const courseId = courseOrderCheck.rows[0].course_id;
+
+            // Grant course access (lifetime access - set access_end far in future, 100 years)
+            const accessEnd = new Date();
+            accessEnd.setFullYear(accessEnd.getFullYear() + 100);
+
+            // Check if course access already exists
+            const existingAccess = await client.query(
+                `SELECT id FROM course_access WHERE user_id = $1 AND course_id = $2`,
+                [order.user_id, courseId]
+            );
+
+            if (existingAccess.rows.length === 0) {
+                await client.query(
+                    `INSERT INTO course_access (user_id, course_id, access_start, access_end, is_active, granted_by)
+                     VALUES ($1, $2, CURRENT_TIMESTAMP, $3, true, $4)`,
+                    [order.user_id, courseId, accessEnd, req.user.id]
+                );
+            } else {
+                // Update existing access to be active
+                await client.query(
+                    `UPDATE course_access 
+                     SET is_active = true, 
+                         access_end = $1,
+                         granted_by = $2,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE user_id = $3 AND course_id = $4`,
+                    [accessEnd, req.user.id, order.user_id, courseId]
+                );
+            }
+
+            // Unlock all videos for the course
+            await client.query(
+                `INSERT INTO video_progress (user_id, video_id, course_id, is_unlocked, unlocked_at)
+                 SELECT $1, v.id, $2, true, CURRENT_TIMESTAMP
+                 FROM videos v
+                 WHERE v.course_id = $2 AND v.is_active = true
+                 ON CONFLICT (user_id, video_id) 
+                 DO UPDATE SET is_unlocked = true, unlocked_at = CURRENT_TIMESTAMP`,
+                [order.user_id, courseId]
+            );
+        } else {
+            // This is a product order - grant digital entitlements
+            await grantDigitalEntitlementsForOrder(
+                client,
+                order.id,
+                order.user_id,
+                req.user.id
+            );
+        }
 
         await client.query("COMMIT");
 
@@ -385,12 +438,62 @@ const razorpayWebhook = async (req, res, next) => {
                     [order.id, razorpayPaymentId || null]
                 );
 
-                await grantDigitalEntitlementsForOrder(
-                    client,
-                    order.id,
-                    order.user_id,
-                    null
+                // Grant entitlements based on order type
+                const courseOrderCheck = await client.query(
+                    `SELECT course_id FROM course_orders WHERE order_id = $1`,
+                    [order.id]
                 );
+
+                if (courseOrderCheck.rows.length > 0) {
+                    // This is a course order - grant course access
+                    const courseId = courseOrderCheck.rows[0].course_id;
+
+                    // Grant course access (lifetime access - set access_end far in future, 100 years)
+                    const accessEnd = new Date();
+                    accessEnd.setFullYear(accessEnd.getFullYear() + 100);
+
+                    // Check if course access already exists
+                    const existingAccess = await client.query(
+                        `SELECT id FROM course_access WHERE user_id = $1 AND course_id = $2`,
+                        [order.user_id, courseId]
+                    );
+
+                    if (existingAccess.rows.length === 0) {
+                        await client.query(
+                            `INSERT INTO course_access (user_id, course_id, access_start, access_end, is_active, granted_by)
+                             VALUES ($1, $2, CURRENT_TIMESTAMP, $3, true, NULL)`,
+                            [order.user_id, courseId, accessEnd]
+                        );
+                    } else {
+                        await client.query(
+                            `UPDATE course_access 
+                             SET is_active = true, 
+                                 access_end = $1,
+                                 updated_at = CURRENT_TIMESTAMP
+                             WHERE user_id = $2 AND course_id = $3`,
+                            [accessEnd, order.user_id, courseId]
+                        );
+                    }
+
+                    // Unlock all videos for the course
+                    await client.query(
+                        `INSERT INTO video_progress (user_id, video_id, course_id, is_unlocked, unlocked_at)
+                         SELECT $1, v.id, $2, true, CURRENT_TIMESTAMP
+                         FROM videos v
+                         WHERE v.course_id = $2 AND v.is_active = true
+                         ON CONFLICT (user_id, video_id) 
+                         DO UPDATE SET is_unlocked = true, unlocked_at = CURRENT_TIMESTAMP`,
+                        [order.user_id, courseId]
+                    );
+                } else {
+                    // This is a product order - grant digital entitlements
+                    await grantDigitalEntitlementsForOrder(
+                        client,
+                        order.id,
+                        order.user_id,
+                        null
+                    );
+                }
 
                 await client.query("COMMIT");
                 return res.status(200).send("OK");

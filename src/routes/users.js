@@ -9,6 +9,7 @@ router.use(authenticate);
 
 router.get("/profile", userController.getProfile);
 router.put("/profile", userController.updateProfile);
+router.post("/accept-terms", userController.acceptTerms);
 router.get("/dashboard", userController.getUserDashboard);
 router.get("/courses", userController.getUserCourses);
 router.get("/courses/:courseId/progress", userController.getCourseProgress);
