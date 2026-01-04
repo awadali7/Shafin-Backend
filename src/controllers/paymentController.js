@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { getClient } = require("../config/database");
 const { getRazorpayClient } = require("../config/razorpay");
+const { createNotification } = require("./notificationController");
 
 function toPaise(amountInRupees) {
     const n = Number(amountInRupees);
@@ -287,6 +288,13 @@ const verifyRazorpayPayment = async (req, res, next) => {
             // This is a course order - grant course access
             const courseId = courseOrderCheck.rows[0].course_id;
 
+            // Get course name for notification
+            const courseRes = await client.query(
+                `SELECT name FROM courses WHERE id = $1`,
+                [courseId]
+            );
+            const courseName = courseRes.rows[0]?.name || "Course";
+
             // Grant course access (lifetime access - set access_end far in future, 100 years)
             const accessEnd = new Date();
             accessEnd.setFullYear(accessEnd.getFullYear() + 100);
@@ -326,6 +334,24 @@ const verifyRazorpayPayment = async (req, res, next) => {
                  DO UPDATE SET is_unlocked = true, unlocked_at = CURRENT_TIMESTAMP`,
                 [order.user_id, courseId]
             );
+
+            // Create notification for course purchase success
+            createNotification(
+                order.user_id,
+                "course_access_granted",
+                "Course Purchased Successfully! 🎉",
+                `Your payment for "${courseName}" has been confirmed. You now have lifetime access to all course content.`,
+                {
+                    course_id: courseId,
+                    course_name: courseName,
+                    order_id: order.id,
+                    payment_id: razorpay_payment_id,
+                    access_start: new Date().toISOString(),
+                    access_end: accessEnd.toISOString(),
+                }
+            ).catch((err) =>
+                console.error("Failed to create purchase notification:", err)
+            );
         } else {
             // This is a product order - grant digital entitlements
             await grantDigitalEntitlementsForOrder(
@@ -333,6 +359,51 @@ const verifyRazorpayPayment = async (req, res, next) => {
                 order.id,
                 order.user_id,
                 req.user.id
+            );
+
+            // Get product details for notification
+            const productsRes = await client.query(
+                `SELECT 
+                    oi.product_id,
+                    oi.product_type,
+                    oi.quantity,
+                    oi.price,
+                    p.name as product_name
+                 FROM order_items oi
+                 LEFT JOIN products p ON oi.product_id = p.id
+                 WHERE oi.order_id = $1`,
+                [order.id]
+            );
+
+            const products = productsRes.rows;
+            const productNames = products
+                .map((p) => p.product_name || `Product ${p.product_id}`)
+                .join(", ");
+            const productCount = products.length;
+
+            // Create product purchase notification
+            createNotification(
+                order.user_id,
+                "product_purchased",
+                "Product Purchase Successful! 🎉",
+                productCount === 1
+                    ? `You've successfully purchased "${productNames}". You can now access your digital product.`
+                    : `You've successfully purchased ${productCount} products: ${productNames}. You can now access your digital products.`,
+                {
+                    order_id: order.id,
+                    payment_id: razorpay_payment_id,
+                    amount: order.total,
+                    products: products.map((p) => ({
+                        product_id: p.product_id,
+                        product_name: p.product_name || `Product ${p.product_id}`,
+                        product_type: p.product_type,
+                        quantity: p.quantity,
+                        price: p.price,
+                    })),
+                    product_count: productCount,
+                }
+            ).catch((err) =>
+                console.error("Failed to create product purchase notification:", err)
             );
         }
 
@@ -448,6 +519,13 @@ const razorpayWebhook = async (req, res, next) => {
                     // This is a course order - grant course access
                     const courseId = courseOrderCheck.rows[0].course_id;
 
+                    // Get course name for notification
+                    const courseRes = await client.query(
+                        `SELECT name FROM courses WHERE id = $1`,
+                        [courseId]
+                    );
+                    const courseName = courseRes.rows[0]?.name || "Course";
+
                     // Grant course access (lifetime access - set access_end far in future, 100 years)
                     const accessEnd = new Date();
                     accessEnd.setFullYear(accessEnd.getFullYear() + 100);
@@ -485,6 +563,27 @@ const razorpayWebhook = async (req, res, next) => {
                          DO UPDATE SET is_unlocked = true, unlocked_at = CURRENT_TIMESTAMP`,
                         [order.user_id, courseId]
                     );
+
+                    // Create notification for course purchase success (from webhook)
+                    createNotification(
+                        order.user_id,
+                        "course_access_granted",
+                        "Course Purchased Successfully! 🎉",
+                        `Your payment for "${courseName}" has been confirmed. You now have lifetime access to all course content.`,
+                        {
+                            course_id: courseId,
+                            course_name: courseName,
+                            order_id: order.id,
+                            payment_id: razorpayPaymentId || null,
+                            access_start: new Date().toISOString(),
+                            access_end: accessEnd.toISOString(),
+                        }
+                    ).catch((err) =>
+                        console.error(
+                            "Failed to create purchase notification:",
+                            err
+                        )
+                    );
                 } else {
                     // This is a product order - grant digital entitlements
                     await grantDigitalEntitlementsForOrder(
@@ -493,9 +592,58 @@ const razorpayWebhook = async (req, res, next) => {
                         order.user_id,
                         null
                     );
+
+                    // Get product details for notification
+                    const productsRes = await client.query(
+                        `SELECT 
+                            oi.product_id,
+                            oi.product_type,
+                            oi.quantity,
+                            oi.price,
+                            p.name as product_name
+                         FROM order_items oi
+                         LEFT JOIN products p ON oi.product_id = p.id
+                         WHERE oi.order_id = $1`,
+                        [order.id]
+                    );
+
+                    const products = productsRes.rows;
+                    const productNames = products
+                        .map((p) => p.product_name || `Product ${p.product_id}`)
+                        .join(", ");
+                    const productCount = products.length;
+
+                    // Create product purchase notification (from webhook)
+                    createNotification(
+                        order.user_id,
+                        "product_purchased",
+                        "Product Purchase Successful! 🎉",
+                        productCount === 1
+                            ? `You've successfully purchased "${productNames}". You can now access your digital product.`
+                            : `You've successfully purchased ${productCount} products: ${productNames}. You can now access your digital products.`,
+                        {
+                            order_id: order.id,
+                            payment_id: razorpayPaymentId || null,
+                            amount: order.total,
+                            products: products.map((p) => ({
+                                product_id: p.product_id,
+                                product_name: p.product_name || `Product ${p.product_id}`,
+                                product_type: p.product_type,
+                                quantity: p.quantity,
+                                price: p.price,
+                            })),
+                            product_count: productCount,
+                        }
+                    ).catch((err) =>
+                        console.error(
+                            "Failed to create product purchase notification:",
+                            err
+                        )
+                    );
                 }
 
                 await client.query("COMMIT");
+
                 return res.status(200).send("OK");
             }
 
@@ -503,6 +651,7 @@ const razorpayWebhook = async (req, res, next) => {
                 // Handle failed payment
                 const entity = payload?.payload?.payment?.entity;
                 const razorpayOrderId = entity?.order_id;
+                const failureReason = entity?.error_description || entity?.error_reason || "Payment failed";
 
                 if (!razorpayOrderId) {
                     return res.status(200).send("No order_id");
@@ -511,7 +660,7 @@ const razorpayWebhook = async (req, res, next) => {
                 await client.query("BEGIN");
 
                 const orderRes = await client.query(
-                    `SELECT id, status
+                    `SELECT id, user_id, status, total
                      FROM orders
                      WHERE payment_provider = 'razorpay'
                      AND payment_reference = $1
@@ -535,6 +684,53 @@ const razorpayWebhook = async (req, res, next) => {
                          WHERE id = $1`,
                         [order.id]
                     );
+
+                    // Check if this is a course order
+                    const courseOrderCheck = await client.query(
+                        `SELECT course_id, course_name FROM course_orders WHERE order_id = $1`,
+                        [order.id]
+                    );
+
+                    if (courseOrderCheck.rows.length > 0) {
+                        // Course purchase failed
+                        const courseName = courseOrderCheck.rows[0].course_name || "Course";
+                        createNotification(
+                            order.user_id,
+                            "payment_failed",
+                            "Course Purchase Failed ❌",
+                            `Your payment for "${courseName}" failed. Reason: ${failureReason}. Please try again.`,
+                            {
+                                order_id: order.id,
+                                course_id: courseOrderCheck.rows[0].course_id,
+                                course_name: courseName,
+                                failure_reason: failureReason,
+                                amount: order.total,
+                            }
+                        ).catch((err) =>
+                            console.error(
+                                "Failed to create payment failure notification:",
+                                err
+                            )
+                        );
+                    } else {
+                        // Regular order failed
+                        createNotification(
+                            order.user_id,
+                            "payment_failed",
+                            "Payment Failed ❌",
+                            `Your payment of ₹${order.total} failed. Reason: ${failureReason}. Please try again.`,
+                            {
+                                order_id: order.id,
+                                failure_reason: failureReason,
+                                amount: order.total,
+                            }
+                        ).catch((err) =>
+                            console.error(
+                                "Failed to create payment failure notification:",
+                                err
+                            )
+                        );
+                    }
                 }
 
                 await client.query("COMMIT");

@@ -55,56 +55,70 @@ function normalizeVideosArray(videos) {
 /**
  * Public: List products
  * Supports: ?q= ?category= ?type= (physical|digital)
+ * Excludes digital products that the authenticated user has already purchased
  */
 const getAllProducts = async (req, res, next) => {
     try {
         const q = (req.query.q || "").toString().trim();
         const category = (req.query.category || "").toString().trim();
         const type = (req.query.type || "").toString().trim();
+        const userId = req.user?.id; // Optional: user ID if authenticated
 
-        const where = ["is_active = true"];
+        const where = ["p.is_active = true"];
         const params = [];
         let i = 1;
 
         if (category && category.toLowerCase() !== "all") {
-            where.push(`category = $${i++}`);
+            where.push(`p.category = $${i++}`);
             params.push(category);
         }
         if (type && ["physical", "digital"].includes(type)) {
-            where.push(`product_type = $${i++}`);
+            where.push(`p.product_type = $${i++}`);
             params.push(type);
         }
         if (q) {
             where.push(
-                `(LOWER(name) LIKE $${i} OR LOWER(category) LIKE $${i} OR LOWER(COALESCE(description,'')) LIKE $${i})`
+                `(LOWER(p.name) LIKE $${i} OR LOWER(p.category) LIKE $${i} OR LOWER(COALESCE(p.description,'')) LIKE $${i})`
             );
             params.push(`%${q.toLowerCase()}%`);
             i++;
         }
 
+        // If user is authenticated, exclude digital products they've already purchased
+        if (userId) {
+            where.push(
+                `(p.product_type != 'digital' OR NOT EXISTS (
+                    SELECT 1 FROM product_entitlements pe 
+                    WHERE pe.product_id = p.id AND pe.user_id = $${i}
+                ))`
+            );
+            params.push(userId);
+            i++;
+        }
+
         const result = await query(
             `SELECT
-                id,
-                name,
-                slug,
-                description,
-                price,
-                category,
-                product_type,
-                cover_image,
-                images,
-                videos,
-                digital_file_name,
-                digital_file_format,
-                stock_quantity,
-                rating,
-                reviews_count,
-                is_active,
-                created_at,
-                updated_at
-             FROM products
+                p.id,
+                p.name,
+                p.slug,
+                p.description,
+                p.price,
+                p.category,
+                p.product_type,
+                p.cover_image,
+                p.images,
+                p.videos,
+                p.digital_file_name,
+                p.digital_file_format,
+                p.stock_quantity,
+                p.rating,
+                p.reviews_count,
+                p.is_active,
+                p.created_at,
+                p.updated_at
+             FROM products p
              WHERE ${where.join(" AND ")}
-             ORDER BY created_at DESC`,
+             ORDER BY p.created_at DESC`,
             params
         );
 

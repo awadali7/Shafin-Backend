@@ -103,7 +103,13 @@ router.post(
     validate,
     courseController.createCourse
 );
-router.put("/:id", authenticate, isAdmin, courseController.updateCourse);
+router.put(
+    "/:id",
+    authenticate,
+    isAdmin,
+    jsonParser, // Parse JSON body for course updates
+    courseController.updateCourse
+);
 router.delete("/:id", authenticate, isAdmin, courseController.deleteCourse);
 
 // Course purchase route (authenticated users)

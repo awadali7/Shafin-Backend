@@ -6,7 +6,7 @@ const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
 
 const productController = require("../controllers/productController");
-const { authenticate, isAdmin } = require("../middleware/auth");
+const { authenticate, optionalAuthenticate, isAdmin } = require("../middleware/auth");
 
 // Directories:
 // - public images are served under /uploads/images
@@ -145,8 +145,8 @@ const upload = multer({
     },
 });
 
-// Public routes
-router.get("/", productController.getAllProducts);
+// Public routes (with optional authentication to filter purchased digital products)
+router.get("/", optionalAuthenticate, productController.getAllProducts);
 
 // Admin routes (must be defined BEFORE /:slug)
 router.get(

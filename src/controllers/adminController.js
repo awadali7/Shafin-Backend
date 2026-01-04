@@ -33,13 +33,25 @@ const getDashboard = async (req, res, next) => {
         );
         const pendingRequests = parseInt(pendingRequestsResult.rows[0].total);
 
-        // Get approved requests (last 30 days)
+        // Get approved requests (total, not just last 30 days)
         const approvedRequestsResult = await query(
-            `SELECT COUNT(*) as total FROM course_requests
-             WHERE status = $1 AND reviewed_at >= NOW() - INTERVAL '30 days'`,
+            `SELECT COUNT(*) as total FROM course_requests WHERE status = $1`,
             [REQUEST_STATUS.APPROVED]
         );
         const approvedRequests = parseInt(approvedRequestsResult.rows[0].total);
+
+        // Get rejected requests (total)
+        const rejectedRequestsResult = await query(
+            `SELECT COUNT(*) as total FROM course_requests WHERE status = $1`,
+            [REQUEST_STATUS.REJECTED]
+        );
+        const rejectedRequests = parseInt(rejectedRequestsResult.rows[0].total);
+
+        // Get total requests (all statuses)
+        const totalRequestsResult = await query(
+            `SELECT COUNT(*) as total FROM course_requests`
+        );
+        const totalRequests = parseInt(totalRequestsResult.rows[0].total);
 
         // Get active course accesses
         const activeAccessResult = await query(
@@ -176,13 +188,23 @@ const getDashboard = async (req, res, next) => {
         res.json({
             success: true,
             data: {
+                // Flat structure for frontend DashboardStats interface
+                total_users: totalUsers,
+                total_courses: totalCourses,
+                total_requests: totalRequests,
+                pending_requests: pendingRequests,
+                approved_requests: approvedRequests,
+                rejected_requests: rejectedRequests,
+                // Additional data (kept for backward compatibility if needed)
                 business_overview: {
                     statistics: {
                         total_users: totalUsers,
                         total_courses: totalCourses,
                         total_videos: totalVideos,
                         pending_requests: pendingRequests,
-                        approved_requests_30d: approvedRequests,
+                        approved_requests: approvedRequests,
+                        rejected_requests: rejectedRequests,
+                        total_requests: totalRequests,
                         active_access: activeAccess,
                     },
                     recent_requests: recentRequestsResult.rows,

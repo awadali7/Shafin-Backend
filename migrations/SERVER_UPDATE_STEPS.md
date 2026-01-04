@@ -272,3 +272,4 @@ If you encounter issues:
 4. Review server logs
 5. Ensure PostgreSQL is running and accessible
 
+

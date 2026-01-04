@@ -27,3 +27,4 @@ CREATE INDEX IF NOT EXISTS idx_products_videos ON products USING GIN (videos);
 COMMENT ON COLUMN products.images IS 'Array of image URLs in JSONB format: ["url1", "url2", ...]';
 COMMENT ON COLUMN products.videos IS 'Array of video objects in JSONB format: [{"title": "...", "url": "...", "thumbnail": "..."}, ...]';
 
+

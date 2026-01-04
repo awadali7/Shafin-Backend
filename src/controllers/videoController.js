@@ -1,5 +1,5 @@
 const { query } = require("../config/database");
-const { formatYouTubeEmbedUrl } = require("../utils/helpers");
+const { formatYouTubeEmbedUrl, getPublicUrl } = require("../utils/helpers");
 const { authenticate } = require("../middleware/auth");
 
 /**
@@ -189,11 +189,12 @@ const getVideoById = async (req, res, next) => {
 
 /**
  * Create video (Admin only)
+ * Supports PDF file uploads via multipart/form-data
  */
 const createVideo = async (req, res, next) => {
     try {
         const { courseId } = req.params;
-        const { title, video_url, description, order_index, pdfs, markdown } =
+        const { title, video_url, description, order_index, markdown } =
             req.body;
 
         // Check if course exists
@@ -226,6 +227,36 @@ const createVideo = async (req, res, next) => {
         // Format YouTube URL to embed format
         const formattedUrl = formatYouTubeEmbedUrl(video_url);
 
+        // Process uploaded PDF files
+        // Use public URL (frontend domain) for PDFs so they're accessible via public domain
+        const publicUrl = getPublicUrl();
+        let pdfsArray = [];
+
+        // Handle uploaded PDF files
+        if (req.files && req.files.length > 0) {
+            pdfsArray = req.files.map((file) => ({
+                name: file.originalname,
+                url: `${publicUrl}/uploads/pdfs/${file.filename}`,
+            }));
+        }
+
+        // Handle PDFs from JSON body (if provided as URLs)
+        // This allows mixing uploaded files with external URLs
+        if (req.body.pdfs) {
+            try {
+                const bodyPdfs =
+                    typeof req.body.pdfs === "string"
+                        ? JSON.parse(req.body.pdfs)
+                        : req.body.pdfs;
+                if (Array.isArray(bodyPdfs)) {
+                    // Merge with uploaded files
+                    pdfsArray = [...pdfsArray, ...bodyPdfs];
+                }
+            } catch (e) {
+                // Invalid JSON, ignore
+            }
+        }
+
         const result = await query(
             `INSERT INTO videos (course_id, title, video_url, description, order_index, pdfs, markdown)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -236,7 +267,7 @@ const createVideo = async (req, res, next) => {
                 formattedUrl,
                 description || null,
                 order_index,
-                pdfs ? JSON.stringify(pdfs) : null,
+                pdfsArray.length > 0 ? JSON.stringify(pdfsArray) : null,
                 markdown || null,
             ]
         );
@@ -253,6 +284,7 @@ const createVideo = async (req, res, next) => {
 
 /**
  * Update video (Admin only)
+ * Supports PDF file uploads via multipart/form-data
  */
 const updateVideo = async (req, res, next) => {
     try {
@@ -262,7 +294,6 @@ const updateVideo = async (req, res, next) => {
             video_url,
             description,
             order_index,
-            pdfs,
             markdown,
             is_active,
         } = req.body;
@@ -296,6 +327,38 @@ const updateVideo = async (req, res, next) => {
             }
         }
 
+        // Process uploaded PDF files
+        // Use public URL (frontend domain) for PDFs so they're accessible via public domain
+        const publicUrl = getPublicUrl();
+        let pdfsArray = null;
+
+        // Handle uploaded PDF files
+        if (req.files && req.files.length > 0) {
+            pdfsArray = req.files.map((file) => ({
+                name: file.originalname,
+                url: `${publicUrl}/uploads/pdfs/${file.filename}`,
+            }));
+        }
+
+        // Handle PDFs from JSON body (if provided as URLs)
+        // This allows mixing uploaded files with external URLs
+        if (req.body.pdfs) {
+            try {
+                const bodyPdfs =
+                    typeof req.body.pdfs === "string"
+                        ? JSON.parse(req.body.pdfs)
+                        : req.body.pdfs;
+                if (Array.isArray(bodyPdfs)) {
+                    // If files were uploaded, merge with them; otherwise use body PDFs
+                    pdfsArray = pdfsArray
+                        ? [...pdfsArray, ...bodyPdfs]
+                        : bodyPdfs;
+                }
+            } catch (e) {
+                // Invalid JSON, ignore
+            }
+        }
+
         // Build update query
         const updates = [];
         const values = [];
@@ -322,9 +385,12 @@ const updateVideo = async (req, res, next) => {
             values.push(order_index);
         }
 
-        if (pdfs !== undefined) {
+        // Update PDFs if provided (either via files or body)
+        if (pdfsArray !== null) {
             updates.push(`pdfs = $${paramCount++}`);
-            values.push(pdfs ? JSON.stringify(pdfs) : null);
+            values.push(
+                pdfsArray.length > 0 ? JSON.stringify(pdfsArray) : null
+            );
         }
 
         if (markdown !== undefined) {

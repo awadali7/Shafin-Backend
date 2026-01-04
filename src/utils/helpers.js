@@ -67,6 +67,23 @@ const formatYouTubeEmbedUrl = (url) => {
 };
 
 /**
+ * Get public URL for uploads/assets
+ * Uses PUBLIC_URL if set, otherwise FRONTEND_URL, otherwise BACKEND_URL
+ * This ensures uploads are accessible via the public domain
+ */
+const getPublicUrl = () => {
+    // Priority: PUBLIC_URL > FRONTEND_URL > BACKEND_URL > default
+    return (
+        process.env.PUBLIC_URL ||
+        process.env.FRONTEND_URL ||
+        process.env.BACKEND_URL ||
+        (process.env.NODE_ENV === "production"
+            ? "https://www.diagtools.in"
+            : "http://localhost:5001")
+    );
+};
+
+/**
  * Normalize image URL - transforms localhost URLs to production backend URL
  */
 const normalizeImageUrl = (url) => {
@@ -121,4 +138,5 @@ module.exports = {
     extractYouTubeId,
     formatYouTubeEmbedUrl,
     normalizeImageUrl,
+    getPublicUrl,
 };

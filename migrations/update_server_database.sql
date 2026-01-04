@@ -193,3 +193,4 @@ END $$;
 -- WHERE table_name = 'kyc_verifications' 
 -- AND column_name = 'id_proof_urls';
 
+
