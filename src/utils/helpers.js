@@ -73,14 +73,22 @@ const formatYouTubeEmbedUrl = (url) => {
  */
 const getPublicUrl = () => {
     // Priority: PUBLIC_URL > FRONTEND_URL > BACKEND_URL > default
-    return (
+    let url = 
         process.env.PUBLIC_URL ||
         process.env.FRONTEND_URL ||
         process.env.BACKEND_URL ||
         (process.env.NODE_ENV === "production"
             ? "https://www.diagtools.in"
-            : "http://localhost:5001")
-    );
+            : "http://localhost:5001");
+    
+    // Clean up URL - remove any commas and extra whitespace (in case env var has multiple URLs)
+    if (url && typeof url === 'string') {
+        url = url.split(',')[0].trim(); // Take only the first URL if multiple are present
+        // Remove trailing slash
+        url = url.replace(/\/+$/, '');
+    }
+    
+    return url;
 };
 
 /**

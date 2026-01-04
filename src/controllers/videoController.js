@@ -230,13 +230,15 @@ const createVideo = async (req, res, next) => {
         // Process uploaded PDF files
         // Use public URL (frontend domain) for PDFs so they're accessible via public domain
         const publicUrl = getPublicUrl();
+        // Ensure clean URL (remove commas, trailing slashes)
+        const cleanPublicUrl = publicUrl ? publicUrl.split(',')[0].trim().replace(/\/+$/, '') : '';
         let pdfsArray = [];
 
         // Handle uploaded PDF files
         if (req.files && req.files.length > 0) {
             pdfsArray = req.files.map((file) => ({
                 name: file.originalname,
-                url: `${publicUrl}/uploads/pdfs/${file.filename}`,
+                url: `${cleanPublicUrl}/uploads/pdfs/${file.filename}`,
             }));
         }
 
@@ -330,13 +332,15 @@ const updateVideo = async (req, res, next) => {
         // Process uploaded PDF files
         // Use public URL (frontend domain) for PDFs so they're accessible via public domain
         const publicUrl = getPublicUrl();
+        // Ensure clean URL (remove commas, trailing slashes)
+        const cleanPublicUrl = publicUrl ? publicUrl.split(',')[0].trim().replace(/\/+$/, '') : '';
         let pdfsArray = null;
 
         // Handle uploaded PDF files
         if (req.files && req.files.length > 0) {
             pdfsArray = req.files.map((file) => ({
                 name: file.originalname,
-                url: `${publicUrl}/uploads/pdfs/${file.filename}`,
+                url: `${cleanPublicUrl}/uploads/pdfs/${file.filename}`,
             }));
         }
 
