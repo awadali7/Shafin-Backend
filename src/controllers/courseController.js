@@ -18,11 +18,49 @@ const getAllCourses = async (req, res, next) => {
                 price,
                 cover_image,
                 icon_name,
+                is_featured,
                 created_at,
                 (SELECT COUNT(*) FROM videos WHERE course_id = courses.id AND is_active = true) as video_count
              FROM courses
              WHERE is_active = true
              ORDER BY created_at DESC`
+        );
+
+        // Normalize image URLs before returning
+        const courses = result.rows.map((course) => ({
+            ...course,
+            cover_image: normalizeImageUrl(course.cover_image),
+        }));
+
+        res.json({
+            success: true,
+            data: courses,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get featured courses (public)
+ */
+const getFeaturedCourses = async (req, res, next) => {
+    try {
+        const result = await query(
+            `SELECT 
+                id,
+                name,
+                slug,
+                description,
+                price,
+                cover_image,
+                icon_name,
+                created_at,
+                (SELECT COUNT(*) FROM videos WHERE course_id = courses.id AND is_active = true) as video_count
+             FROM courses
+             WHERE is_active = true AND is_featured = true
+             ORDER BY created_at DESC
+             LIMIT 6`
         );
 
         // Normalize image URLs before returning
@@ -48,7 +86,7 @@ const getCourseBySlug = async (req, res, next) => {
         const { slug } = req.params;
 
         const result = await query(
-            `SELECT id, name, slug, description, price, cover_image, icon_name, created_at
+            `SELECT id, name, slug, description, price, cover_image, icon_name, is_featured, created_at
              FROM courses
              WHERE slug = $1 AND is_active = true
              LIMIT 1`,
@@ -88,6 +126,7 @@ const createCourse = async (req, res, next) => {
             description,
             price,
             icon_name,
+            is_featured,
             cover_image: coverImageData,
         } = req.body;
 
@@ -161,9 +200,9 @@ const createCourse = async (req, res, next) => {
         }
 
         const result = await query(
-            `INSERT INTO courses (name, slug, description, price, cover_image, icon_name, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             RETURNING id, name, slug, description, price, cover_image, icon_name, created_at`,
+            `INSERT INTO courses (name, slug, description, price, cover_image, icon_name, is_featured, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id, name, slug, description, price, cover_image, icon_name, is_featured, created_at`,
             [
                 name,
                 finalSlug,
@@ -171,6 +210,7 @@ const createCourse = async (req, res, next) => {
                 price || 0,
                 cover_image,
                 icon_name || null,
+                is_featured || false,
                 req.user.id,
             ]
         );
@@ -197,8 +237,15 @@ const createCourse = async (req, res, next) => {
 const updateCourse = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { name, slug, description, price, icon_name, cover_image } =
-            req.body;
+        const {
+            name,
+            slug,
+            description,
+            price,
+            icon_name,
+            is_featured,
+            cover_image,
+        } = req.body;
 
         // Check if course exists
         const existingCourse = await query(
@@ -249,6 +296,10 @@ const updateCourse = async (req, res, next) => {
         if (icon_name !== undefined) {
             updates.push(`icon_name = $${paramCount++}`);
             values.push(icon_name);
+        }
+        if (is_featured !== undefined) {
+            updates.push(`is_featured = $${paramCount++}`);
+            values.push(is_featured);
         }
         if (cover_image !== undefined) {
             updates.push(`cover_image = $${paramCount++}`);
@@ -361,13 +412,20 @@ const purchaseCourse = async (req, res, next) => {
             [userId]
         );
 
-        if (kycCheck.rows.length === 0 || kycCheck.rows[0].status !== 'verified') {
+        if (
+            kycCheck.rows.length === 0 ||
+            kycCheck.rows[0].status !== "verified"
+        ) {
             await client.query("ROLLBACK");
             return res.status(403).json({
                 success: false,
-                message: "KYC verification is required before purchasing courses. Please complete your KYC first.",
+                message:
+                    "KYC verification is required before purchasing courses. Please complete your KYC first.",
                 requires_kyc: true,
-                kyc_status: kycCheck.rows.length > 0 ? kycCheck.rows[0].status : 'not_completed',
+                kyc_status:
+                    kycCheck.rows.length > 0
+                        ? kycCheck.rows[0].status
+                        : "not_completed",
             });
         }
 
@@ -377,11 +435,15 @@ const purchaseCourse = async (req, res, next) => {
             [userId]
         );
 
-        if (userCheck.rows.length === 0 || !userCheck.rows[0].terms_accepted_at) {
+        if (
+            userCheck.rows.length === 0 ||
+            !userCheck.rows[0].terms_accepted_at
+        ) {
             await client.query("ROLLBACK");
             return res.status(403).json({
                 success: false,
-                message: "Terms and conditions acceptance is required before purchasing courses.",
+                message:
+                    "Terms and conditions acceptance is required before purchasing courses.",
                 requires_terms_acceptance: true,
             });
         }
@@ -549,9 +611,7 @@ const grantCourseAccess = async (req, res, next) => {
                 access_start: access_start,
                 access_end: access_end,
             }
-        ).catch((err) =>
-            console.error("Failed to create notification:", err)
-        );
+        ).catch((err) => console.error("Failed to create notification:", err));
 
         res.json({
             success: true,
@@ -568,6 +628,7 @@ const grantCourseAccess = async (req, res, next) => {
 
 module.exports = {
     getAllCourses,
+    getFeaturedCourses,
     getCourseBySlug,
     createCourse,
     updateCourse,

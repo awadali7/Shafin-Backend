@@ -141,6 +141,55 @@ const getAllProducts = async (req, res, next) => {
 };
 
 /**
+ * Public: Get featured products
+ */
+const getFeaturedProducts = async (req, res, next) => {
+    try {
+        const result = await query(
+            `SELECT
+                p.id,
+                p.name,
+                p.slug,
+                p.description,
+                p.price,
+                p.category,
+                p.product_type,
+                p.cover_image,
+                p.images,
+                p.videos,
+                p.digital_file_name,
+                p.digital_file_format,
+                p.stock_quantity,
+                p.rating,
+                p.reviews_count,
+                p.is_active,
+                p.created_at,
+                p.updated_at
+             FROM products p
+             WHERE p.is_active = true AND p.is_featured = true
+             ORDER BY p.created_at DESC
+             LIMIT 6`
+        );
+
+        const products = result.rows.map((p) => ({
+            ...p,
+            type: p.product_type,
+            cover_image: normalizeImageUrl(p.cover_image),
+            images: normalizeImagesArray(p.images) || [],
+            videos: normalizeVideosArray(p.videos) || [],
+            in_stock:
+                p.product_type === "digital"
+                    ? true
+                    : (p.stock_quantity ?? 0) > 0,
+        }));
+
+        res.json({ success: true, data: products });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Public: Get product by slug
  */
 const getProductBySlug = async (req, res, next) => {
@@ -263,6 +312,7 @@ const adminCreateProduct = async (req, res, next) => {
             product_type,
             price,
             stock_quantity,
+            is_featured,
             rating,
             reviews_count,
             images,
@@ -388,9 +438,10 @@ const adminCreateProduct = async (req, res, next) => {
                 stock_quantity,
                 rating,
                 reviews_count,
+                is_featured,
                 created_by
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
             )
             RETURNING
                 id,
@@ -432,6 +483,7 @@ const adminCreateProduct = async (req, res, next) => {
                 type === "physical" ? toNumber(stock_quantity, 0) : null,
                 toNumber(rating, 0),
                 Math.max(0, parseInt(reviews_count || "0", 10) || 0),
+                toBoolean(is_featured) || false,
                 req.user?.id || null,
             ]
         );
@@ -489,6 +541,7 @@ const adminUpdateProduct = async (req, res, next) => {
             rating,
             reviews_count,
             is_active,
+            is_featured,
             images,
             videos,
         } = req.body || {};
@@ -555,6 +608,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 "reviews_count",
                 Math.max(0, parseInt(reviews_count, 10) || 0)
             );
+        if (is_featured !== undefined) setIfDefined("is_featured", toBoolean(is_featured) || false);
 
         if (nextType === "physical" && stock_quantity !== undefined) {
             setIfDefined("stock_quantity", toNumber(stock_quantity, 0));
@@ -769,6 +823,7 @@ const adminDeleteProduct = async (req, res, next) => {
 
 module.exports = {
     getAllProducts,
+    getFeaturedProducts,
     getProductBySlug,
     adminGetAllProducts,
     adminCreateProduct,

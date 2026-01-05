@@ -60,6 +60,7 @@ const uploadCourseImage = multer({
 
 // Public routes
 router.get("/", courseController.getAllCourses);
+router.get("/featured/list", courseController.getFeaturedCourses); // Must be before /:slug
 router.get("/:slug", courseController.getCourseBySlug);
 
 // Create JSON parser instance (only for JSON requests)

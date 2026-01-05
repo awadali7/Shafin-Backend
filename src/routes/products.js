@@ -147,6 +147,7 @@ const upload = multer({
 
 // Public routes (with optional authentication to filter purchased digital products)
 router.get("/", optionalAuthenticate, productController.getAllProducts);
+router.get("/featured/list", productController.getFeaturedProducts); // Must be before /:slug
 
 // Admin routes (must be defined BEFORE /:slug)
 router.get(
