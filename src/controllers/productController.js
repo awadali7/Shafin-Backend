@@ -68,17 +68,24 @@ const getAllProducts = async (req, res, next) => {
         const params = [];
         let i = 1;
 
+        // Filter by category - now checks if category is in the categories JSONB array
         if (category && category.toLowerCase() !== "all") {
-            where.push(`p.category = $${i++}`);
-            params.push(category);
+            where.push(`p.categories @> $${i}::jsonb`);
+            params.push(JSON.stringify([category]));
+            i++;
         }
         if (type && ["physical", "digital"].includes(type)) {
             where.push(`p.product_type = $${i++}`);
             params.push(type);
         }
         if (q) {
+            // Search in name, description, and all categories
             where.push(
-                `(LOWER(p.name) LIKE $${i} OR LOWER(p.category) LIKE $${i} OR LOWER(COALESCE(p.description,'')) LIKE $${i})`
+                `(LOWER(p.name) LIKE $${i} OR LOWER(COALESCE(p.description,'')) LIKE $${i} OR 
+                 EXISTS (
+                     SELECT 1 FROM jsonb_array_elements_text(p.categories) AS cat 
+                     WHERE LOWER(cat) LIKE $${i}
+                 ))`
             );
             params.push(`%${q.toLowerCase()}%`);
             i++;
@@ -104,6 +111,7 @@ const getAllProducts = async (req, res, next) => {
                 p.description,
                 p.price,
                 p.category,
+                p.categories,
                 p.product_type,
                 p.cover_image,
                 p.images,
@@ -114,6 +122,7 @@ const getAllProducts = async (req, res, next) => {
                 p.rating,
                 p.reviews_count,
                 p.is_active,
+                p.quantity_pricing,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -125,6 +134,11 @@ const getAllProducts = async (req, res, next) => {
         const products = result.rows.map((p) => ({
             ...p,
             type: p.product_type,
+            // For backward compatibility, keep category field (first category from array)
+            category: p.categories && Array.isArray(p.categories) && p.categories.length > 0 
+                ? p.categories[0] 
+                : p.category || null,
+            categories: p.categories || [],
             cover_image: normalizeImageUrl(p.cover_image),
             images: normalizeImagesArray(p.images) || [],
             videos: normalizeVideosArray(p.videos) || [],
@@ -153,6 +167,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.description,
                 p.price,
                 p.category,
+                p.categories,
                 p.product_type,
                 p.cover_image,
                 p.images,
@@ -163,6 +178,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.rating,
                 p.reviews_count,
                 p.is_active,
+                p.quantity_pricing,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -174,6 +190,10 @@ const getFeaturedProducts = async (req, res, next) => {
         const products = result.rows.map((p) => ({
             ...p,
             type: p.product_type,
+            category: p.categories && Array.isArray(p.categories) && p.categories.length > 0 
+                ? p.categories[0] 
+                : p.category || null,
+            categories: p.categories || [],
             cover_image: normalizeImageUrl(p.cover_image),
             images: normalizeImagesArray(p.images) || [],
             videos: normalizeVideosArray(p.videos) || [],
@@ -204,6 +224,7 @@ const getProductBySlug = async (req, res, next) => {
                 description,
                 price,
                 category,
+                categories,
                 product_type,
                 cover_image,
                 images,
@@ -214,6 +235,7 @@ const getProductBySlug = async (req, res, next) => {
                 rating,
                 reviews_count,
                 is_active,
+                quantity_pricing,
                 created_at,
                 updated_at
              FROM products
@@ -235,6 +257,10 @@ const getProductBySlug = async (req, res, next) => {
             data: {
                 ...p,
                 type: p.product_type,
+                category: p.categories && Array.isArray(p.categories) && p.categories.length > 0 
+                    ? p.categories[0] 
+                    : p.category || null,
+                categories: p.categories || [],
                 cover_image: normalizeImageUrl(p.cover_image),
                 images: normalizeImagesArray(p.images) || [],
                 videos: normalizeVideosArray(p.videos) || [],
@@ -262,6 +288,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 description,
                 price,
                 category,
+                categories,
                 product_type,
                 cover_image,
                 images,
@@ -272,6 +299,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 rating,
                 reviews_count,
                 is_active,
+                quantity_pricing,
                 created_at,
                 updated_at
              FROM products
@@ -281,6 +309,10 @@ const adminGetAllProducts = async (req, res, next) => {
         const products = result.rows.map((p) => ({
             ...p,
             type: p.product_type,
+            category: p.categories && Array.isArray(p.categories) && p.categories.length > 0 
+                ? p.categories[0] 
+                : p.category || null,
+            categories: p.categories || [],
             cover_image: normalizeImageUrl(p.cover_image),
             images: normalizeImagesArray(p.images) || [],
             videos: normalizeVideosArray(p.videos) || [],
@@ -309,6 +341,7 @@ const adminCreateProduct = async (req, res, next) => {
             slug,
             description = "",
             category = "",
+            categories,
             product_type,
             price,
             stock_quantity,
@@ -317,6 +350,7 @@ const adminCreateProduct = async (req, res, next) => {
             reviews_count,
             images,
             videos,
+            quantity_discounts,
         } = req.body || {};
 
         const type = (product_type || req.body?.type || "").toString().trim();
@@ -421,6 +455,27 @@ const adminCreateProduct = async (req, res, next) => {
         const imagesJson = allImageUrls.length > 0 ? JSON.stringify(allImageUrls) : null;
         const videosJson = allVideos.length > 0 ? JSON.stringify(allVideos) : null;
 
+        // Handle categories array
+        let categoriesArray = [];
+        if (categories) {
+            try {
+                const parsedCategories = typeof categories === 'string' ? JSON.parse(categories) : categories;
+                if (Array.isArray(parsedCategories)) {
+                    categoriesArray = parsedCategories.filter(cat => cat && cat.trim()).slice(0, 4); // Max 4 categories
+                }
+            } catch (e) {
+                // If parsing fails and it's a string, treat as single category
+                if (typeof categories === 'string' && categories.trim()) {
+                    categoriesArray = [categories.trim()];
+                }
+            }
+        }
+        // Backward compatibility: if no categories but category exists, use it
+        if (categoriesArray.length === 0 && category && category.trim()) {
+            categoriesArray = [category.trim()];
+        }
+        const categoriesJson = JSON.stringify(categoriesArray);
+
         const insert = await query(
             `INSERT INTO products (
                 name,
@@ -428,6 +483,7 @@ const adminCreateProduct = async (req, res, next) => {
                 description,
                 price,
                 category,
+                categories,
                 product_type,
                 cover_image,
                 images,
@@ -441,7 +497,7 @@ const adminCreateProduct = async (req, res, next) => {
                 is_featured,
                 created_by
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
             )
             RETURNING
                 id,
@@ -450,6 +506,7 @@ const adminCreateProduct = async (req, res, next) => {
                 description,
                 price,
                 category,
+                categories,
                 product_type,
                 cover_image,
                 images,
@@ -467,7 +524,8 @@ const adminCreateProduct = async (req, res, next) => {
                 slug,
                 description,
                 toNumber(price, 0),
-                category || null,
+                categoriesArray.length > 0 ? categoriesArray[0] : null, // First category for backward compatibility
+                categoriesJson,
                 type,
                 coverImageUrl,
                 imagesJson,
@@ -494,6 +552,10 @@ const adminCreateProduct = async (req, res, next) => {
             data: {
                 ...p,
                 type: p.product_type,
+                category: p.categories && Array.isArray(p.categories) && p.categories.length > 0 
+                    ? p.categories[0] 
+                    : p.category || null,
+                categories: p.categories || [],
                 cover_image: normalizeImageUrl(p.cover_image),
                 images: normalizeImagesArray(p.images) || [],
                 videos: normalizeVideosArray(p.videos) || [],
@@ -534,6 +596,7 @@ const adminUpdateProduct = async (req, res, next) => {
             slug,
             description,
             category,
+            categories,
             product_type,
             type,
             price,
@@ -544,6 +607,7 @@ const adminUpdateProduct = async (req, res, next) => {
             is_featured,
             images,
             videos,
+            quantity_pricing,
         } = req.body || {};
 
         const nextType = (product_type || type || current.product_type || "")
@@ -599,7 +663,37 @@ const adminUpdateProduct = async (req, res, next) => {
         setIfDefined("name", name);
         setIfDefined("slug", slug);
         setIfDefined("description", description);
-        setIfDefined("category", category);
+        
+        // Handle categories array update
+        if (categories !== undefined) {
+            let categoriesArray = [];
+            try {
+                const parsedCategories = typeof categories === 'string' ? JSON.parse(categories) : categories;
+                if (Array.isArray(parsedCategories)) {
+                    categoriesArray = parsedCategories.filter(cat => cat && cat.trim()).slice(0, 4);
+                }
+            } catch (e) {
+                if (typeof categories === 'string' && categories.trim()) {
+                    categoriesArray = [categories.trim()];
+                }
+            }
+            // Backward compatibility: if no categories but category exists, use it
+            if (categoriesArray.length === 0 && category && category.trim()) {
+                categoriesArray = [category.trim()];
+            }
+            setIfDefined("categories", JSON.stringify(categoriesArray));
+            // Also update category field for backward compatibility
+            if (categoriesArray.length > 0) {
+                setIfDefined("category", categoriesArray[0]);
+            }
+        } else if (category !== undefined) {
+            // If only category is provided (not categories array), update both
+            setIfDefined("category", category);
+            if (category && category.trim()) {
+                setIfDefined("categories", JSON.stringify([category.trim()]));
+            }
+        }
+        
         setIfDefined("product_type", nextType);
         if (price !== undefined) setIfDefined("price", toNumber(price, 0));
         if (rating !== undefined) setIfDefined("rating", toNumber(rating, 0));
@@ -647,6 +741,16 @@ const adminUpdateProduct = async (req, res, next) => {
             }
         }
 
+        // Handle quantity_pricing array (JSONB)
+        if (quantity_pricing !== undefined) {
+            try {
+                const pricingJson = Array.isArray(quantity_pricing) ? JSON.stringify(quantity_pricing) : quantity_pricing;
+                setIfDefined("quantity_pricing", pricingJson);
+            } catch (e) {
+                // ignore invalid JSON
+            }
+        }
+
         const activeBool = toBoolean(is_active);
         if (activeBool !== undefined) setIfDefined("is_active", activeBool);
 
@@ -666,6 +770,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 description,
                 price,
                 category,
+                categories,
                 product_type,
                 cover_image,
                 images,
@@ -676,6 +781,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 rating,
                 reviews_count,
                 is_active,
+                quantity_pricing,
                 created_at,
                 updated_at`,
             values
@@ -687,6 +793,10 @@ const adminUpdateProduct = async (req, res, next) => {
             data: {
                 ...p,
                 type: p.product_type,
+                category: p.categories && Array.isArray(p.categories) && p.categories.length > 0 
+                    ? p.categories[0] 
+                    : p.category || null,
+                categories: p.categories || [],
                 cover_image: normalizeImageUrl(p.cover_image),
                 images: normalizeImagesArray(p.images) || [],
                 videos: normalizeVideosArray(p.videos) || [],

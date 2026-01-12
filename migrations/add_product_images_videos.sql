@@ -28,3 +28,4 @@ COMMENT ON COLUMN products.images IS 'Array of image URLs in JSONB format: ["url
 COMMENT ON COLUMN products.videos IS 'Array of video objects in JSONB format: [{"title": "...", "url": "...", "thumbnail": "..."}, ...]';
 
 
+

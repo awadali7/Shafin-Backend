@@ -67,6 +67,79 @@ const formatYouTubeEmbedUrl = (url) => {
 };
 
 /**
+ * Extract Vimeo video ID from URL
+ * Supports formats:
+ * - https://vimeo.com/123456789
+ * - https://player.vimeo.com/video/123456789
+ * - https://vimeo.com/channels/staffpicks/123456789
+ * - Full embed codes with parameters
+ */
+const extractVimeoId = (url) => {
+    // Handle player.vimeo.com/video/ID format
+    const playerMatch = url.match(/player\.vimeo\.com\/video\/(\d+)/);
+    if (playerMatch && playerMatch[1]) {
+        return playerMatch[1];
+    }
+    
+    // Handle vimeo.com/ID format (including channels, groups)
+    const regExp = /(?:vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/(?:[^/]*)\/videos\/|video\/|)(\d+)(?:|\/\?))/;
+    const match = url.match(regExp);
+    return match ? match[1] : null;
+};
+
+/**
+ * Format Vimeo URL to embed format
+ * Adds privacy and control parameters
+ */
+const formatVimeoEmbedUrl = (url) => {
+    const videoId = extractVimeoId(url);
+    if (!videoId) return url;
+    // Add parameters: no title, no byline, no portrait for cleaner embed
+    return `https://player.vimeo.com/video/${videoId}?title=0&byline=0&portrait=0&dnt=1`;
+};
+
+/**
+ * Detect video platform from URL
+ * Returns: 'youtube', 'vimeo', or 'unknown'
+ */
+const detectVideoPlatform = (url) => {
+    if (!url || typeof url !== 'string') return 'unknown';
+    
+    const urlLower = url.toLowerCase();
+    
+    if (urlLower.includes('youtube.com') || 
+        urlLower.includes('youtu.be') || 
+        urlLower.includes('youtube-nocookie.com')) {
+        return 'youtube';
+    }
+    
+    if (urlLower.includes('vimeo.com')) {
+        return 'vimeo';
+    }
+    
+    return 'unknown';
+};
+
+/**
+ * Format video URL to proper embed format (supports YouTube and Vimeo)
+ * Auto-detects platform and returns appropriate embed URL
+ */
+const formatVideoEmbedUrl = (url) => {
+    if (!url) return url;
+    
+    const platform = detectVideoPlatform(url);
+    
+    switch (platform) {
+        case 'youtube':
+            return formatYouTubeEmbedUrl(url);
+        case 'vimeo':
+            return formatVimeoEmbedUrl(url);
+        default:
+            return url; // Return as-is if unknown platform
+    }
+};
+
+/**
  * Get public URL for uploads/assets
  * Uses PUBLIC_URL if set, otherwise FRONTEND_URL, otherwise BACKEND_URL
  * This ensures uploads are accessible via the public domain
@@ -145,6 +218,10 @@ module.exports = {
     sanitizeInput,
     extractYouTubeId,
     formatYouTubeEmbedUrl,
+    extractVimeoId,
+    formatVimeoEmbedUrl,
+    detectVideoPlatform,
+    formatVideoEmbedUrl,
     normalizeImageUrl,
     getPublicUrl,
 };

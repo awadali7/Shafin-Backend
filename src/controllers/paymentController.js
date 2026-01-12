@@ -277,6 +277,24 @@ const verifyRazorpayPayment = async (req, res, next) => {
             [order.id, razorpay_payment_id]
         );
 
+        // Reduce stock for physical products (only when payment succeeds!)
+        const orderItemsRes = await client.query(
+            `SELECT oi.product_id, oi.quantity, p.product_type
+             FROM order_items oi
+             JOIN products p ON p.id = oi.product_id
+             WHERE oi.order_id = $1 AND p.product_type = 'physical'`,
+            [order.id]
+        );
+
+        for (const item of orderItemsRes.rows) {
+            await client.query(
+                `UPDATE products
+                 SET stock_quantity = GREATEST(COALESCE(stock_quantity, 0) - $1, 0)
+                 WHERE id = $2`,
+                [item.quantity, item.product_id]
+            );
+        }
+
         // Grant entitlements based on order type
         // Check if this is a course order or product order
         const courseOrderCheck = await client.query(
@@ -508,6 +526,24 @@ const razorpayWebhook = async (req, res, next) => {
                      WHERE id = $1`,
                     [order.id, razorpayPaymentId || null]
                 );
+
+                // Reduce stock for physical products (only when payment succeeds!)
+                const orderItemsRes = await client.query(
+                    `SELECT oi.product_id, oi.quantity, p.product_type
+                     FROM order_items oi
+                     JOIN products p ON p.id = oi.product_id
+                     WHERE oi.order_id = $1 AND p.product_type = 'physical'`,
+                    [order.id]
+                );
+
+                for (const item of orderItemsRes.rows) {
+                    await client.query(
+                        `UPDATE products
+                         SET stock_quantity = GREATEST(COALESCE(stock_quantity, 0) - $1, 0)
+                         WHERE id = $2`,
+                        [item.quantity, item.product_id]
+                    );
+                }
 
                 // Grant entitlements based on order type
                 const courseOrderCheck = await client.query(

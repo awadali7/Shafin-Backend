@@ -406,6 +406,24 @@ const purchaseCourse = async (req, res, next) => {
         const course = courseRes.rows[0];
         const coursePrice = Number(course.price) || 0;
 
+        // FIRST: Check if user already has access to this course
+        // This should be checked BEFORE KYC/terms to avoid unnecessary redirects
+        const existingAccess = await client.query(
+            `SELECT id FROM course_access 
+             WHERE user_id = $1 AND course_id = $2 AND is_active = true
+             AND (access_end IS NULL OR access_end > CURRENT_TIMESTAMP)`,
+            [userId, courseId]
+        );
+
+        if (existingAccess.rows.length > 0) {
+            await client.query("ROLLBACK");
+            return res.status(400).json({
+                success: false,
+                message: "You already have access to this course",
+                already_purchased: true,
+            });
+        }
+
         // Check if user has completed KYC verification
         const kycCheck = await client.query(
             `SELECT id, status FROM kyc_verifications WHERE user_id = $1`,
@@ -445,22 +463,6 @@ const purchaseCourse = async (req, res, next) => {
                 message:
                     "Terms and conditions acceptance is required before purchasing courses.",
                 requires_terms_acceptance: true,
-            });
-        }
-
-        // Check if user already has access to this course
-        const existingAccess = await client.query(
-            `SELECT id FROM course_access 
-             WHERE user_id = $1 AND course_id = $2 AND is_active = true
-             AND (access_end IS NULL OR access_end > CURRENT_TIMESTAMP)`,
-            [userId, courseId]
-        );
-
-        if (existingAccess.rows.length > 0) {
-            await client.query("ROLLBACK");
-            return res.status(400).json({
-                success: false,
-                message: "You already have access to this course",
             });
         }
 

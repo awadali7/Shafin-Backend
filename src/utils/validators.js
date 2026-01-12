@@ -67,6 +67,7 @@ const createCourseValidation = [
 
 /**
  * Validation rules for video creation
+ * Supports both YouTube and Vimeo URLs
  */
 const createVideoValidation = [
     body("title")
@@ -78,8 +79,8 @@ const createVideoValidation = [
     body("video_url")
         .isURL()
         .withMessage("Video URL must be a valid URL")
-        .matches(/youtube\.com|youtu\.be/)
-        .withMessage("Video URL must be a YouTube URL"),
+        .matches(/youtube\.com|youtu\.be|vimeo\.com/)
+        .withMessage("Video URL must be a YouTube or Vimeo URL"),
     body("order_index")
         .isInt({ min: 0 })
         .withMessage("Order index must be a non-negative integer"),

@@ -1,5 +1,5 @@
 const { query } = require("../config/database");
-const { formatYouTubeEmbedUrl, getPublicUrl } = require("../utils/helpers");
+const { formatVideoEmbedUrl, detectVideoPlatform, getPublicUrl } = require("../utils/helpers");
 const { authenticate } = require("../middleware/auth");
 
 /**
@@ -224,8 +224,11 @@ const createVideo = async (req, res, next) => {
             });
         }
 
-        // Format YouTube URL to embed format
-        const formattedUrl = formatYouTubeEmbedUrl(video_url);
+        // Format video URL to embed format (supports YouTube and Vimeo)
+        const formattedUrl = formatVideoEmbedUrl(video_url);
+        const platform = detectVideoPlatform(video_url);
+        
+        console.log(`[VIDEO CREATE] Detected platform: ${platform}, Original URL: ${video_url}, Formatted: ${formattedUrl}`);
 
         // Process uploaded PDF files
         // Use public URL (frontend domain) for PDFs so they're accessible via public domain
@@ -374,7 +377,11 @@ const updateVideo = async (req, res, next) => {
         }
 
         if (video_url) {
-            const formattedUrl = formatYouTubeEmbedUrl(video_url);
+            const formattedUrl = formatVideoEmbedUrl(video_url);
+            const platform = detectVideoPlatform(video_url);
+            
+            console.log(`[VIDEO UPDATE] Detected platform: ${platform}, Original URL: ${video_url}, Formatted: ${formattedUrl}`);
+            
             updates.push(`video_url = $${paramCount++}`);
             values.push(formattedUrl);
         }

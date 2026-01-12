@@ -1,4 +1,8 @@
 const { query, getClient } = require("../config/database");
+const {
+    calculateQuantityPrice,
+    getNextPricingOption,
+} = require("../utils/pricing");
 
 function toMoney(n) {
     const num = Number(n);
@@ -33,7 +37,7 @@ const createOrder = async (req, res, next) => {
         await client.query("BEGIN");
 
         const productsRes = await client.query(
-            `SELECT id, name, price, product_type, stock_quantity, is_active
+            `SELECT id, name, price, product_type, stock_quantity, is_active, quantity_pricing
              FROM products
              WHERE id = ANY($1::uuid[])`,
             [ids]
@@ -73,20 +77,52 @@ const createOrder = async (req, res, next) => {
             return p?.product_type === "physical";
         });
 
-        const subtotal = toMoney(
-            items.reduce((sum, i) => {
-                const p = byId.get(i.product_id);
-                return sum + Number(p.price) * Number(i.quantity || 1);
-            }, 0)
-        );
-        const shippingCost = hasPhysical ? 200 : 0;
-        const total = toMoney(subtotal + shippingCost);
+        // Calculate subtotal with quantity pricing
+        let subtotal = 0;
+        let totalDiscount = 0;
+        const itemsWithPricing = [];
+
+        for (const item of items) {
+            const p = byId.get(item.product_id);
+            const basePrice = Number(p.price);
+            const quantity = Number(item.quantity || 1);
+
+            // Calculate price for this quantity
+            const pricingInfo = calculateQuantityPrice(
+                basePrice,
+                quantity,
+                p.quantity_pricing || []
+            );
+
+            const itemTotal = pricingInfo.totalPrice;
+            const regularTotal = basePrice * quantity;
+            const itemSavings = pricingInfo.savings;
+
+            subtotal += itemTotal;
+            totalDiscount += itemSavings;
+
+            itemsWithPricing.push({
+                ...item,
+                basePrice,
+                totalPrice: itemTotal,
+                pricePerItem: pricingInfo.pricePerItem,
+                savings: itemSavings,
+                isPricing: pricingInfo.isPricing,
+                appliedPricing: pricingInfo.appliedPricing,
+            });
+        }
+
+        subtotal = toMoney(subtotal);
+        totalDiscount = toMoney(totalDiscount);
+        const shippingCost = 0; // No shipping charges
+        const total = toMoney(subtotal);
 
         const orderRes = await client.query(
             `INSERT INTO orders (
                 user_id,
                 status,
                 subtotal,
+                discount,
                 shipping_cost,
                 total,
                 first_name,
@@ -98,12 +134,13 @@ const createOrder = async (req, res, next) => {
                 state,
                 pincode
              ) VALUES (
-                $1,'pending',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+                $1,'pending',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
              )
-             RETURNING id, status, subtotal, shipping_cost, total, created_at`,
+             RETURNING id, status, subtotal, discount, shipping_cost, total, created_at`,
             [
                 req.user.id,
                 subtotal,
+                totalDiscount,
                 shippingCost,
                 total,
                 customer?.first_name || null,
@@ -119,28 +156,28 @@ const createOrder = async (req, res, next) => {
 
         const order = orderRes.rows[0];
 
-        for (const item of items) {
-            const p = byId.get(item.product_id);
+        // Insert order items with pricing information
+        for (const itemInfo of itemsWithPricing) {
+            const p = byId.get(itemInfo.product_id);
             await client.query(
                 `INSERT INTO order_items (
-                    order_id, product_id, quantity, unit_price, product_type
-                 ) VALUES ($1,$2,$3,$4,$5)`,
-                [order.id, p.id, item.quantity, p.price, p.product_type]
+                    order_id, product_id, quantity, unit_price, custom_price, price_type, product_type
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [
+                    order.id,
+                    p.id,
+                    itemInfo.quantity,
+                    itemInfo.basePrice,
+                    itemInfo.isPricing ? itemInfo.totalPrice : null,
+                    itemInfo.isPricing ? 'bulk_pricing' : 'regular',
+                    p.product_type,
+                ]
             );
         }
 
-        // Reserve stock (simple decrement on create)
-        for (const item of items) {
-            const p = byId.get(item.product_id);
-            if (p.product_type === "physical") {
-                await client.query(
-                    `UPDATE products
-                     SET stock_quantity = GREATEST(COALESCE(stock_quantity,0) - $1, 0)
-                     WHERE id = $2`,
-                    [item.quantity, p.id]
-                );
-            }
-        }
+        // NOTE: Stock is NOT reduced here!
+        // Stock will be reduced when payment is confirmed in paymentController.js
+        // This prevents stock loss when users create orders but don't complete payment
 
         await client.query("COMMIT");
 

@@ -248,3 +248,4 @@ If you encounter issues:
 4. Ensure all required tables exist before adding foreign keys
 
 
+
