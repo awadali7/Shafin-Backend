@@ -37,7 +37,7 @@ const createOrder = async (req, res, next) => {
         await client.query("BEGIN");
 
         const productsRes = await client.query(
-            `SELECT id, name, price, product_type, stock_quantity, is_active, quantity_pricing
+            `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing
              FROM products
              WHERE id = ANY($1::uuid[])`,
             [ids]
@@ -91,7 +91,7 @@ const createOrder = async (req, res, next) => {
             const pricingInfo = calculateQuantityPrice(
                 basePrice,
                 quantity,
-                p.quantity_pricing || []
+                p.tiered_pricing || []
             );
 
             const itemTotal = pricingInfo.totalPrice;

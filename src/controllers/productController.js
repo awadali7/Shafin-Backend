@@ -122,7 +122,7 @@ const getAllProducts = async (req, res, next) => {
                 p.rating,
                 p.reviews_count,
                 p.is_active,
-                p.quantity_pricing,
+                p.tiered_pricing,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -178,7 +178,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.rating,
                 p.reviews_count,
                 p.is_active,
-                p.quantity_pricing,
+                p.tiered_pricing,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -235,7 +235,7 @@ const getProductBySlug = async (req, res, next) => {
                 rating,
                 reviews_count,
                 is_active,
-                quantity_pricing,
+                tiered_pricing,
                 created_at,
                 updated_at
              FROM products
@@ -299,7 +299,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 rating,
                 reviews_count,
                 is_active,
-                quantity_pricing,
+                tiered_pricing,
                 created_at,
                 updated_at
              FROM products
@@ -607,7 +607,7 @@ const adminUpdateProduct = async (req, res, next) => {
             is_featured,
             images,
             videos,
-            quantity_pricing,
+            tiered_pricing,
         } = req.body || {};
 
         const nextType = (product_type || type || current.product_type || "")
@@ -741,11 +741,11 @@ const adminUpdateProduct = async (req, res, next) => {
             }
         }
 
-        // Handle quantity_pricing array (JSONB)
-        if (quantity_pricing !== undefined) {
+        // Handle tiered_pricing array (JSONB)
+        if (tiered_pricing !== undefined) {
             try {
-                const pricingJson = Array.isArray(quantity_pricing) ? JSON.stringify(quantity_pricing) : quantity_pricing;
-                setIfDefined("quantity_pricing", pricingJson);
+                const pricingJson = Array.isArray(tiered_pricing) ? JSON.stringify(tiered_pricing) : tiered_pricing;
+                setIfDefined("tiered_pricing", pricingJson);
             } catch (e) {
                 // ignore invalid JSON
             }
@@ -781,7 +781,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 rating,
                 reviews_count,
                 is_active,
-                quantity_pricing,
+                tiered_pricing,
                 created_at,
                 updated_at`,
             values
