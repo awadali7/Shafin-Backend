@@ -130,8 +130,7 @@ const getAllProducts = async (req, res, next) => {
                 p.is_active,
                 p.is_coming_soon,
                 p.tiered_pricing,
-                p.requires_kyc_single,
-                p.requires_kyc_multiple,
+                p.requires_kyc,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -192,8 +191,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.is_active,
                 p.is_coming_soon,
                 p.tiered_pricing,
-                p.requires_kyc_single,
-                p.requires_kyc_multiple,
+                p.requires_kyc,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -255,8 +253,7 @@ const getProductBySlug = async (req, res, next) => {
                 is_active,
                 is_coming_soon,
                 tiered_pricing,
-                requires_kyc_single,
-                requires_kyc_multiple,
+                requires_kyc,
                 created_at,
                 updated_at
              FROM products
@@ -325,8 +322,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 is_active,
                 is_coming_soon,
                 tiered_pricing,
-                requires_kyc_single,
-                requires_kyc_multiple,
+                requires_kyc,
                 created_at,
                 updated_at
              FROM products
@@ -381,8 +377,7 @@ const adminCreateProduct = async (req, res, next) => {
             images,
             videos,
             quantity_discounts,
-            requires_kyc_single,
-            requires_kyc_multiple,
+            requires_kyc,
         } = req.body || {};
 
         const type = (product_type || req.body?.type || "").toString().trim();
@@ -547,11 +542,10 @@ const adminCreateProduct = async (req, res, next) => {
                 reviews_count,
                 is_featured,
                 is_coming_soon,
-                requires_kyc_single,
-                requires_kyc_multiple,
+                requires_kyc,
                 created_by
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
             )
             RETURNING
                 id,
@@ -573,8 +567,7 @@ const adminCreateProduct = async (req, res, next) => {
                 is_active,
                 is_coming_soon,
                 tiered_pricing,
-                requires_kyc_single,
-                requires_kyc_multiple,
+                requires_kyc,
                 created_at,
                 updated_at`,
             [
@@ -601,8 +594,7 @@ const adminCreateProduct = async (req, res, next) => {
                 Math.max(0, parseInt(reviews_count || "0", 10) || 0),
                 toBoolean(is_featured) || false,
                 toBoolean(req.body.is_coming_soon) || false,
-                toBoolean(requires_kyc_single) || false,
-                toBoolean(requires_kyc_multiple) || false,
+                toBoolean(requires_kyc) || false,
                 req.user?.id || null,
             ]
         );
@@ -670,6 +662,7 @@ const adminUpdateProduct = async (req, res, next) => {
             is_active,
             is_featured,
             is_coming_soon,
+            requires_kyc,
             images,
             videos,
             tiered_pricing,
@@ -776,6 +769,8 @@ const adminUpdateProduct = async (req, res, next) => {
             setIfDefined("is_featured", toBoolean(is_featured) || false);
         if (is_coming_soon !== undefined)
             setIfDefined("is_coming_soon", toBoolean(is_coming_soon) || false);
+        if (requires_kyc !== undefined)
+            setIfDefined("requires_kyc", toBoolean(requires_kyc) || false);
 
         if (nextType === "physical" && stock_quantity !== undefined) {
             setIfDefined("stock_quantity", toNumber(stock_quantity, 0));
@@ -861,6 +856,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 reviews_count,
                 is_active,
                 is_coming_soon,
+                requires_kyc,
                 tiered_pricing,
                 created_at,
                 updated_at`,

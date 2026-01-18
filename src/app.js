@@ -21,6 +21,7 @@ const productRoutes = require("./routes/products");
 const orderRoutes = require("./routes/orders");
 const paymentRoutes = require("./routes/payments");
 const kycRoutes = require("./routes/kyc");
+const productKycRoutes = require("./routes/product-kyc");
 
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
@@ -180,6 +181,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/blogs", blogRoutes);
 app.use("/api/uploads", uploadRoutes);
 app.use("/api/kyc", kycRoutes);
+app.use("/api/product-kyc", productKycRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/payments", paymentRoutes);

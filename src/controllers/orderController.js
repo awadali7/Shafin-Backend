@@ -37,13 +37,46 @@ const createOrder = async (req, res, next) => {
         await client.query("BEGIN");
 
         const productsRes = await client.query(
-            `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing
+            `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing, requires_kyc
              FROM products
              WHERE id = ANY($1::uuid[])`,
             [ids]
         );
 
         const byId = new Map(productsRes.rows.map((p) => [p.id, p]));
+        
+        // Check if any product requires KYC
+        const hasKycProduct = productsRes.rows.some(p => p.requires_kyc);
+        
+        if (hasKycProduct) {
+            // Check user's product KYC verification status
+            const kycCheck = await client.query(
+                `SELECT id, status FROM product_kyc_verifications WHERE user_id = $1`,
+                [req.user.id]
+            );
+            
+            if (kycCheck.rows.length === 0) {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                    success: false,
+                    message: "Product KYC verification is required before purchasing these items. Please complete your Product KYC first.",
+                    requires_product_kyc: true,
+                    kyc_status: "not_completed"
+                });
+            }
+            
+            const kyc = kycCheck.rows[0];
+            if (kyc.status !== "verified") {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                    success: false,
+                    message: `Your Product KYC verification is ${kyc.status}. Please complete and verify your Product KYC before purchasing.`,
+                    requires_product_kyc: true,
+                    kyc_status: kyc.status
+                });
+            }
+        }
+        
         for (const item of items) {
             const p = byId.get(item.product_id);
             if (!p || !p.is_active) {
