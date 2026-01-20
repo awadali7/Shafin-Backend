@@ -543,9 +543,10 @@ const adminCreateProduct = async (req, res, next) => {
                 is_featured,
                 is_coming_soon,
                 requires_kyc,
-                created_by
+                created_by,
+                tiered_pricing
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, $21
             )
             RETURNING
                 id,
@@ -596,6 +597,14 @@ const adminCreateProduct = async (req, res, next) => {
                 toBoolean(req.body.is_coming_soon) || false,
                 toBoolean(requires_kyc) || false,
                 req.user?.id || null,
+                // Handle tiered pricing (accepts either tiered_pricing or quantity_pricing or quantity_discounts from body)
+                (() => {
+                    const pricing = req.body.tiered_pricing || req.body.quantity_pricing || req.body.quantity_discounts;
+                    if (!pricing) return null;
+                    try {
+                        return typeof pricing === 'string' ? pricing : JSON.stringify(pricing);
+                    } catch (e) { return null; }
+                })()
             ]
         );
 
@@ -666,6 +675,8 @@ const adminUpdateProduct = async (req, res, next) => {
             images,
             videos,
             tiered_pricing,
+            quantity_pricing,
+            quantity_discounts,
         } = req.body || {};
 
         const nextType = (product_type || type || current.product_type || "")
@@ -813,12 +824,13 @@ const adminUpdateProduct = async (req, res, next) => {
             }
         }
 
-        // Handle tiered_pricing array (JSONB)
-        if (tiered_pricing !== undefined) {
+        // Handle tiered_pricing array (JSONB) - check all aliases
+        const pricingUpdate = tiered_pricing || quantity_pricing || quantity_discounts;
+        if (pricingUpdate !== undefined) {
             try {
-                const pricingJson = Array.isArray(tiered_pricing)
-                    ? JSON.stringify(tiered_pricing)
-                    : tiered_pricing;
+                const pricingJson = Array.isArray(pricingUpdate)
+                    ? JSON.stringify(pricingUpdate)
+                    : pricingUpdate;
                 setIfDefined("tiered_pricing", pricingJson);
             } catch (e) {
                 // ignore invalid JSON
