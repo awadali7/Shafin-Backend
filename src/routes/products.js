@@ -117,14 +117,16 @@ const fileFilter = (req, file, cb) => {
     }
 
     // Handle digital_file
-    if (file.fieldname === "digital_file") {
+        if (file.fieldname === "digital_file") {
         const allowedMimes = [
             "application/zip",
             "application/x-zip-compressed",
             "application/vnd.rar",
             "application/x-rar-compressed",
+            "application/x-rar",
         ];
         if (allowedMimes.includes(file.mimetype)) return cb(null, true);
+        console.log("Rejected digital file mime:", file.mimetype);
         return cb(
             new Error(
                 "Invalid digital file. Only ZIP and RAR files are allowed."
