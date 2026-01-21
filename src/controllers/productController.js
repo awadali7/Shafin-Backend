@@ -400,11 +400,37 @@ const adminCreateProduct = async (req, res, next) => {
         const videoFiles = req.files?.videos || [];
         const videoThumbnailFiles = req.files?.video_thumbnails || [];
 
-        if (type === "digital" && !digitalFile) {
-            return res.status(400).json({
-                success: false,
-                message: "digital_file is required for digital products",
-            });
+        let digitalFilePath = null;
+        let digitalFileName = null;
+        let digitalFileFormat = null;
+
+        if (type === "digital") {
+            if (digitalFile) {
+                // New file uploaded
+                digitalFilePath = digitalFile.path;
+                digitalFileName = digitalFile.originalname;
+                digitalFileFormat = path.extname(digitalFile.originalname).replace(".", "").toLowerCase();
+            } else if (req.body.digital_file_name) {
+                // Linking existing file
+                const linkedFileName = req.body.digital_file_name;
+                const linkedFilePath = path.join(__dirname, "../../private_uploads/digital", linkedFileName);
+                
+                if (fs.existsSync(linkedFilePath)) {
+                    digitalFilePath = linkedFilePath;
+                    digitalFileName = linkedFileName;
+                    digitalFileFormat = path.extname(linkedFileName).replace(".", "").toLowerCase();
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Linked digital file does not exist",
+                    });
+                }
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    message: "digital_file or digital_file_name is required for digital products",
+                });
+            }
         }
 
         const baseUrl = process.env.BACKEND_URL || "http://localhost:5001";
@@ -582,14 +608,9 @@ const adminCreateProduct = async (req, res, next) => {
                 coverImageUrl,
                 imagesJson,
                 videosJson,
-                digitalFile ? digitalFile.path : null,
-                digitalFile ? digitalFile.originalname : null,
-                digitalFile
-                    ? path
-                          .extname(digitalFile.originalname)
-                          .replace(".", "")
-                          .toLowerCase()
-                    : null,
+                digitalFilePath,
+                digitalFileName,
+                digitalFileFormat,
                 type === "physical" ? toNumber(stock_quantity, 0) : null,
                 toNumber(rating, 0),
                 Math.max(0, parseInt(reviews_count || "0", 10) || 0),
@@ -697,11 +718,13 @@ const adminUpdateProduct = async (req, res, next) => {
             ? `${baseUrl}/uploads/images/${coverImageFile.filename}`
             : undefined;
 
-        // Replace digital file if uploaded
+        // Replace digital file if uploaded OR linked
         let digitalPath = undefined;
         let digitalName = undefined;
         let digitalFormat = undefined;
+        
         if (digitalFile) {
+            // New file uploaded
             digitalPath = digitalFile.path;
             digitalName = digitalFile.originalname;
             digitalFormat = path
@@ -709,6 +732,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 .replace(".", "")
                 .toLowerCase();
 
+            // Delete old file if exists
             const oldPath = current.digital_file_storage_path;
             if (oldPath && fs.existsSync(oldPath)) {
                 try {
@@ -716,6 +740,23 @@ const adminUpdateProduct = async (req, res, next) => {
                 } catch (e) {
                     // ignore
                 }
+            }
+        } else if (req.body.digital_file_name) {
+            // Linking existing file
+            const linkedFileName = req.body.digital_file_name;
+            const linkedFilePath = path.join(__dirname, "../../private_uploads/digital", linkedFileName);
+            
+            if (fs.existsSync(linkedFilePath)) {
+                 // Check if it's different from current
+                 if (current.digital_file_storage_path !== linkedFilePath) {
+                    digitalPath = linkedFilePath;
+                    digitalName = linkedFileName;
+                    digitalFormat = path.extname(linkedFileName).replace(".", "").toLowerCase();
+                    
+                    // We don't delete the old file if we are just switching links, 
+                    // unless the old file was exclusive to this product. 
+                    // For now, let's NOT delete old files when switching links to avoid deleting shared files.
+                 }
             }
         }
 

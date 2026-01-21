@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
 const entitlementController = require("../controllers/entitlementController");
+const digitalController = require("../controllers/digitalController");
 const { authenticate, isAdmin } = require("../middleware/auth");
 
 // All routes require admin authentication
@@ -23,5 +24,15 @@ router.post(
     "/product-entitlements/grant",
     entitlementController.adminGrantProductToUser
 );
+
+// Digital File Library
+router.get("/digital-files", digitalController.listDigitalFiles);
+router.post(
+    "/digital-files",
+    digitalController.upload.single("file"),
+    digitalController.uploadDigitalFile
+);
+router.delete("/digital-files/:filename", digitalController.deleteDigitalFile);
+router.get("/digital-files/:filename/download", digitalController.downloadDigitalFile);
 
 module.exports = router;

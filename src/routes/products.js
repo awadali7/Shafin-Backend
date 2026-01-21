@@ -142,8 +142,8 @@ const upload = multer({
     storage,
     fileFilter,
     limits: { 
-        fileSize: 250 * 1024 * 1024, // 250MB (digital archives can be bigger)
-        fieldSize: 50 * 1024 * 1024, // 50MB for non-file fields (for JSON strings)
+        fileSize: 2048 * 1024 * 1024, // 2GB (increased for large digital files)
+        fieldSize: 100 * 1024 * 1024, // 100MB for non-file fields
     },
 });
 
