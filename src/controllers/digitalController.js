@@ -1,7 +1,6 @@
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const { v4: uuidv4 } = require("uuid");
 
 // Private directory for digital files
 const digitalDir = path.join(__dirname, "../../private_uploads/digital");
@@ -11,17 +10,40 @@ if (!fs.existsSync(digitalDir)) {
     fs.mkdirSync(digitalDir, { recursive: true });
 }
 
+// Helper function to generate unique filename with auto-numbering
+const generateUniqueFilename = (baseName, extension) => {
+    let filename = `${baseName}${extension}`;
+    let counter = 1;
+
+    while (fs.existsSync(path.join(digitalDir, filename))) {
+        filename = `${baseName} (${counter})${extension}`;
+        counter++;
+    }
+
+    return filename;
+};
+
 // Multer storage configuration
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, digitalDir);
     },
     filename: (req, file, cb) => {
-        // Keep original filename if possible, but handle duplicates or just use uuid prefix
-        // For library, users prefer original names. Let's prepend UUID to ensure uniqueness.
-        // OR preserve original name for easier "copy link" usage if conflicts aren't an issue.
-        // Better: UUID-OriginalName
-        const uniqueName = `${uuidv4()}-${file.originalname}`;
+        // Use custom_name if provided, otherwise use original filename
+        const customName = req.body?.custom_name?.trim();
+        const extension = path.extname(file.originalname);
+        const nameWithoutExt =
+            customName || path.basename(file.originalname, extension);
+
+        // Sanitize the name
+        const sanitizedName = nameWithoutExt.replace(
+            /[^a-zA-Z0-9.\-_\s]/g,
+            "_"
+        );
+
+        // Generate unique filename with auto-numbering if duplicate
+        const uniqueName = generateUniqueFilename(sanitizedName, extension);
+
         cb(null, uniqueName);
     },
 });
@@ -30,14 +52,33 @@ const fileFilter = (req, file, cb) => {
     const allowedMimes = [
         "application/zip",
         "application/x-zip-compressed",
+        "application/x-compressed",
+        "multipart/x-zip",
         "application/vnd.rar",
         "application/x-rar-compressed",
         "application/x-rar",
+        "application/octet-stream", // Generic binary (Windows often uses this for RAR)
     ];
-    if (allowedMimes.includes(file.mimetype)) {
+
+    // Get file extension (case-insensitive)
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = [".zip", ".rar"];
+
+    // Check MIME type OR file extension
+    const isValidMime = allowedMimes.includes(file.mimetype);
+    const isValidExtension = allowedExtensions.includes(ext);
+
+    if (isValidMime && isValidExtension) {
+        cb(null, true);
+    } else if (isValidExtension) {
+        // If extension is valid but MIME is not in our list, still allow it
+        // This handles cases where Windows sends different MIME types
         cb(null, true);
     } else {
-        cb(new Error("Invalid file type. Only ZIP and RAR are allowed."), false);
+        cb(
+            new Error("Invalid file type. Only ZIP and RAR are allowed."),
+            false
+        );
     }
 };
 
@@ -84,29 +125,13 @@ const listDigitalFiles = async (req, res, next) => {
 const uploadDigitalFile = async (req, res, next) => {
     try {
         if (!req.file) {
-            return res.status(400).json({ success: false, message: "No file uploaded" });
+            return res
+                .status(400)
+                .json({ success: false, message: "No file uploaded" });
         }
 
-        let finalFilename = req.file.filename;
-
-        // Construct final filename
-        // If custom_name is provided, use it after the UUID prefix
-        // We need to parse the UUID from the current filename first
-        if (req.body.custom_name && req.body.custom_name.trim()) {
-            const extension = path.extname(req.file.originalname); // .zip
-            const sanitizedCustomName = req.body.custom_name.trim().replace(/[^a-zA-Z0-9.\-_]/g, "_");
-            
-            // Current format: uuid-originalname
-            // We want: uuid-customname
-            const uuidPrefix = req.file.filename.substring(0, 36); // UUID is 36 chars
-            const newFilename = `${uuidPrefix}-${sanitizedCustomName}${extension}`;
-            
-            const oldPath = req.file.path;
-            const newPath = path.join(digitalDir, newFilename);
-            
-            fs.renameSync(oldPath, newPath);
-            finalFilename = newFilename;
-        }
+        // Filename already handled by multer storage config with auto-numbering
+        const finalFilename = req.file.filename;
 
         res.status(201).json({
             success: true,
@@ -119,7 +144,9 @@ const uploadDigitalFile = async (req, res, next) => {
     } catch (error) {
         // Cleanup if error
         if (req.file && fs.existsSync(req.file.path)) {
-             try { fs.unlinkSync(req.file.path); } catch(e) {}
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch (e) {}
         }
         next(error);
     }
@@ -132,7 +159,9 @@ const deleteDigitalFile = async (req, res, next) => {
     try {
         const { filename } = req.params;
         if (!filename) {
-            return res.status(400).json({ success: false, message: "Filename required" });
+            return res
+                .status(400)
+                .json({ success: false, message: "Filename required" });
         }
 
         // Prevent path traversal
@@ -157,7 +186,9 @@ const downloadDigitalFile = async (req, res, next) => {
     try {
         const { filename } = req.params;
         if (!filename) {
-            return res.status(400).json({ success: false, message: "Filename required" });
+            return res
+                .status(400)
+                .json({ success: false, message: "Filename required" });
         }
 
         // Prevent path traversal
