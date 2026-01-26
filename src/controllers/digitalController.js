@@ -29,22 +29,12 @@ const storage = multer.diskStorage({
         cb(null, digitalDir);
     },
     filename: (req, file, cb) => {
-        // Use custom_name if provided, otherwise use original filename
-        const customName = req.body?.custom_name?.trim();
-        const extension = path.extname(file.originalname);
-        const nameWithoutExt =
-            customName || path.basename(file.originalname, extension);
-
-        // Sanitize the name
-        const sanitizedName = nameWithoutExt.replace(
-            /[^a-zA-Z0-9.\-_\s]/g,
-            "_"
-        );
-
-        // Generate unique filename with auto-numbering if duplicate
-        const uniqueName = generateUniqueFilename(sanitizedName, extension);
-
-        cb(null, uniqueName);
+        // Use a temporary unique name during upload
+        // We'll rename it after we have access to req.body.custom_name
+        const tempName = `temp_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(7)}${path.extname(file.originalname)}`;
+        cb(null, tempName);
     },
 });
 
@@ -130,8 +120,28 @@ const uploadDigitalFile = async (req, res, next) => {
                 .json({ success: false, message: "No file uploaded" });
         }
 
-        // Filename already handled by multer storage config with auto-numbering
-        const finalFilename = req.file.filename;
+        // Now we have access to req.body.custom_name
+        const customName = req.body?.custom_name?.trim();
+        const extension = path.extname(req.file.originalname);
+
+        // Use custom_name if provided, otherwise use original filename
+        const nameWithoutExt =
+            customName || path.basename(req.file.originalname, extension);
+
+        // Sanitize the name
+        const sanitizedName = nameWithoutExt.replace(
+            /[^a-zA-Z0-9.\-_\s]/g,
+            "_"
+        );
+
+        // Generate unique filename with auto-numbering if duplicate
+        const finalFilename = generateUniqueFilename(sanitizedName, extension);
+
+        // Rename from temp name to final name
+        const tempPath = req.file.path;
+        const finalPath = path.join(digitalDir, finalFilename);
+
+        fs.renameSync(tempPath, finalPath);
 
         res.status(201).json({
             success: true,
