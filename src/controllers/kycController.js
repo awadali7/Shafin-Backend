@@ -52,8 +52,11 @@ const uploadFields = upload.fields([
     { name: "profile_photo", maxCount: 1 },
 ]);
 
+// Middleware for business upgrade (optional business proof)
+const uploadBusinessProof = upload.single("business_proof");
+
 /**
- * Submit KYC information
+ * Submit Student KYC information
  */
 const submitKYC = async (req, res, next) => {
     try {
@@ -85,7 +88,7 @@ const submitKYC = async (req, res, next) => {
         if (!req.files || !req.files.id_proof || req.files.id_proof.length === 0 || !req.files.profile_photo) {
             return res.status(400).json({
                 success: false,
-                message: "At least one ID proof image and profile photo are required",
+                message: "At least one ID proof file and one profile photo are required",
             });
         }
 
@@ -167,9 +170,25 @@ const submitKYC = async (req, res, next) => {
                 ]
             );
 
+            // Set user type to student if not set
+            await query(
+                "UPDATE users SET user_type = 'student' WHERE id = $1 AND user_type IS NULL",
+                [userId]
+            );
+
+            // Create notification
+            const { createNotification } = require("./notificationController");
+            await createNotification(
+                userId,
+                "kyc_pending",
+                "Student KYC Submitted",
+                "Your KYC information has been updated and is pending review. You will be notified once it's verified (business days 9am-6pm).",
+                { kyc_id: result.rows[0].id }
+            );
+
             return res.status(200).json({
                 success: true,
-                message: "KYC information updated successfully",
+                message: "Student KYC information updated successfully",
                 data: result.rows[0],
             });
         }
@@ -196,9 +215,25 @@ const submitKYC = async (req, res, next) => {
             ]
         );
 
+        // Set user type to student if not set
+        await query(
+            "UPDATE users SET user_type = 'student' WHERE id = $1 AND user_type IS NULL",
+            [userId]
+        );
+
+        // Create notification
+        const { createNotification } = require("./notificationController");
+        await createNotification(
+            userId,
+            "kyc_pending",
+            "Student KYC Submitted",
+            "Your KYC information has been submitted successfully. You will be notified once it's verified (business days 9am-6pm).",
+            { kyc_id: result.rows[0].id }
+        );
+
         res.status(201).json({
             success: true,
-            message: "KYC information submitted successfully",
+            message: "Student KYC information submitted successfully",
             data: result.rows[0],
         });
     } catch (error) {
@@ -216,6 +251,114 @@ const submitKYC = async (req, res, next) => {
                     }
                 });
             });
+        }
+        next(error);
+    }
+};
+
+/**
+ * Upgrade Student to Business Owner
+ * Adds business information to existing Student KYC
+ */
+const upgradeToBusiness = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+        const { business_id, business_location_link } = req.body;
+
+        // Validation
+        if (!business_id || !business_location_link) {
+            return res.status(400).json({
+                success: false,
+                message: "Business ID and business location link are required",
+            });
+        }
+
+        // Check if user has Student KYC
+        const kycCheck = await query(
+            "SELECT id, status, upgraded_to_business FROM kyc_verifications WHERE user_id = $1",
+            [userId]
+        );
+
+        if (kycCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Please complete Student KYC first before upgrading to business",
+                requires_student_kyc: true,
+            });
+        }
+
+        const kyc = kycCheck.rows[0];
+
+        // Check if Student KYC is verified
+        if (kyc.status !== "verified") {
+            return res.status(403).json({
+                success: false,
+                message: "Your Student KYC must be verified before upgrading to business",
+                kyc_status: kyc.status,
+            });
+        }
+
+        // Check if already upgraded
+        if (kyc.upgraded_to_business) {
+            return res.status(409).json({
+                success: false,
+                message: "You have already upgraded to business owner",
+            });
+        }
+
+        // Handle business proof upload
+        let businessProofUrl = null;
+        if (req.file) {
+            businessProofUrl = `/uploads/kyc/${req.file.filename}`;
+        }
+
+        // Upgrade to business - set status back to pending for admin approval
+        const result = await query(
+            `UPDATE kyc_verifications 
+             SET business_id = $1, 
+                 business_location_link = $2,
+                 business_proof_url = $3,
+                 upgraded_to_business = false,
+                 business_upgraded_at = NULL,
+                 status = 'pending',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = $4
+             RETURNING *`,
+            [business_id, business_location_link, businessProofUrl, userId]
+        );
+
+        // Update user type to business_owner
+        await query(
+            "UPDATE users SET user_type = 'business_owner' WHERE id = $1",
+            [userId]
+        );
+
+        // Create notification
+        const { createNotification } = require("./notificationController");
+        await createNotification(
+            userId,
+            "kyc_pending",
+            "Business Upgrade Submitted",
+            "Your business information has been submitted for verification. You will be notified once approved (business days 9am-6pm).",
+            { kyc_id: kyc.id }
+        );
+
+        res.json({
+            success: true,
+            message: "Business upgrade submitted successfully. Pending admin approval.",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        // Clean up uploaded file on error
+        if (req.file) {
+            const filePath = path.join(
+                __dirname,
+                "../../uploads/kyc",
+                req.file.filename
+            );
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
         }
         next(error);
     }
@@ -241,6 +384,11 @@ const getMyKYC = async (req, res, next) => {
                 status,
                 rejection_reason,
                 verified_at,
+                business_id,
+                business_location_link,
+                business_proof_url,
+                upgraded_to_business,
+                business_upgraded_at,
                 created_at,
                 updated_at
              FROM kyc_verifications 
@@ -287,12 +435,18 @@ const getAllKYC = async (req, res, next) => {
                 k.rejection_reason,
                 k.verified_by,
                 k.verified_at,
+                k.business_id,
+                k.business_location_link,
+                k.business_proof_url,
+                k.upgraded_to_business,
+                k.business_upgraded_at,
                 k.created_at,
                 k.updated_at,
                 u.id as user_id,
                 u.email as user_email,
                 u.first_name as user_first_name,
                 u.last_name as user_last_name,
+                u.user_type,
                 verifier.email as verifier_email
              FROM kyc_verifications k
              JOIN users u ON k.user_id = u.id
@@ -362,12 +516,18 @@ const getKYCById = async (req, res, next) => {
                 k.rejection_reason,
                 k.verified_by,
                 k.verified_at,
+                k.business_id,
+                k.business_location_link,
+                k.business_proof_url,
+                k.upgraded_to_business,
+                k.business_upgraded_at,
                 k.created_at,
                 k.updated_at,
                 u.id as user_id,
                 u.email as user_email,
                 u.first_name as user_first_name,
                 u.last_name as user_last_name,
+                u.user_type,
                 verifier.email as verifier_email
              FROM kyc_verifications k
              JOIN users u ON k.user_id = u.id
@@ -393,7 +553,8 @@ const getKYCById = async (req, res, next) => {
 };
 
 /**
- * Verify KYC (Admin only)
+ * Verify KYC (Admin only) 
+ * Now handles both Student KYC and Business Upgrade verification
  */
 const verifyKYC = async (req, res, next) => {
     try {
@@ -417,7 +578,8 @@ const verifyKYC = async (req, res, next) => {
 
         // Check if KYC exists
         const existingKYC = await query(
-            "SELECT id, user_id, status FROM kyc_verifications WHERE id = $1",
+            `SELECT id, user_id, status, business_id, upgraded_to_business 
+             FROM kyc_verifications WHERE id = $1`,
             [id]
         );
 
@@ -428,6 +590,9 @@ const verifyKYC = async (req, res, next) => {
             });
         }
 
+        const kyc = existingKYC.rows[0];
+        const isBusinessUpgrade = kyc.business_id !== null;
+
         // Update KYC status
         const updateData = {
             status,
@@ -436,52 +601,90 @@ const verifyKYC = async (req, res, next) => {
             updated_at: new Date(),
         };
 
-        if (status === "rejected") {
-            updateData.rejection_reason = rejection_reason;
-        } else {
-            updateData.rejection_reason = null;
-        }
-
-        const result = await query(
-            `UPDATE kyc_verifications 
+        let updateQuery = `UPDATE kyc_verifications 
              SET status = $1, verified_by = $2, verified_at = $3,
-                 rejection_reason = $4, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $5
-             RETURNING *`,
-            [
-                status,
-                adminId,
-                updateData.verified_at,
-                updateData.rejection_reason,
-                id,
-            ]
-        );
+                 rejection_reason = $4, updated_at = CURRENT_TIMESTAMP`;
+        
+        const params = [status, adminId, updateData.verified_at, 
+                       status === "rejected" ? rejection_reason : null];
+        
+        // If this is a business upgrade and it's being verified, set the flag
+        if (isBusinessUpgrade && status === "verified") {
+            updateQuery += `, upgraded_to_business = true, business_upgraded_at = CURRENT_TIMESTAMP`;
+        }
+        
+        updateQuery += ` WHERE id = $5 RETURNING *`;
+        params.push(id);
+
+        const result = await query(updateQuery, params);
 
         // Create notification for user
         const { createNotification } = require("./notificationController");
-        const userId = existingKYC.rows[0].user_id;
+        const { sendKYCApprovedEmail, sendKYCRejectedEmail } = require("../config/email");
+        const userId = kyc.user_id;
+
+        // Get user email for email notification
+        const userResult = await query("SELECT email, first_name FROM users WHERE id = $1", [userId]);
+        const userEmail = userResult.rows[0]?.email;
+        const userName = userResult.rows[0]?.first_name;
 
         if (status === "verified") {
-            await createNotification(
-                userId,
-                "kyc_verified",
-                "KYC Verification Approved",
-                "Your KYC verification has been approved. You can now request course access.",
-                { kyc_id: id }
-            );
+            if (isBusinessUpgrade) {
+                await createNotification(
+                    userId,
+                    "kyc_business_upgrade_verified",
+                    "Business Upgrade Approved",
+                    "Your business upgrade has been approved. You can now purchase KYC-required products in bulk quantities.",
+                    { kyc_id: id }
+                );
+                // Send email
+                if (userEmail) {
+                    await sendKYCApprovedEmail(userEmail, userName, "Business Upgrade");
+                }
+            } else {
+                await createNotification(
+                    userId,
+                    "kyc_verified",
+                    "Student KYC Approved",
+                    "Your KYC verification has been approved. You can now purchase courses.",
+                    { kyc_id: id }
+                );
+                // Send email
+                if (userEmail) {
+                    await sendKYCApprovedEmail(userEmail, userName, "Student KYC");
+                }
+            }
         } else {
-            await createNotification(
-                userId,
-                "kyc_rejected",
-                "KYC Verification Rejected",
-                `Your KYC verification has been rejected. Reason: ${rejection_reason}`,
-                { kyc_id: id, rejection_reason }
-            );
+            if (isBusinessUpgrade) {
+                await createNotification(
+                    userId,
+                    "kyc_business_upgrade_rejected",
+                    "Business Upgrade Rejected",
+                    `Your business upgrade has been rejected. Reason: ${rejection_reason}`,
+                    { kyc_id: id, rejection_reason }
+                );
+                // Send email
+                if (userEmail) {
+                    await sendKYCRejectedEmail(userEmail, userName, rejection_reason, "Business Upgrade");
+                }
+            } else {
+                await createNotification(
+                    userId,
+                    "kyc_rejected",
+                    "Student KYC Rejected",
+                    `Your KYC verification has been rejected. Reason: ${rejection_reason}`,
+                    { kyc_id: id, rejection_reason }
+                );
+                // Send email
+                if (userEmail) {
+                    await sendKYCRejectedEmail(userEmail, userName, rejection_reason, "Student KYC");
+                }
+            }
         }
 
         res.json({
             success: true,
-            message: `KYC ${status} successfully`,
+            message: `${isBusinessUpgrade ? 'Business upgrade' : 'Student KYC'} ${status} successfully`,
             data: result.rows[0],
         });
     } catch (error) {
@@ -491,9 +694,11 @@ const verifyKYC = async (req, res, next) => {
 
 module.exports = {
     submitKYC,
+    upgradeToBusiness,
     getMyKYC,
     getAllKYC,
     getKYCById,
     verifyKYC,
     uploadFields, // Export upload middleware
+    uploadBusinessProof, // Export business proof upload middleware
 };

@@ -44,39 +44,86 @@ const createOrder = async (req, res, next) => {
         );
 
         const byId = new Map(productsRes.rows.map((p) => [p.id, p]));
-        
+
         // Check if any product requires KYC
-        const hasKycProduct = productsRes.rows.some(p => p.requires_kyc);
-        
+        const hasKycProduct = productsRes.rows.some((p) => p.requires_kyc);
+
         if (hasKycProduct) {
-            // Check user's product KYC verification status
-            const kycCheck = await client.query(
+            // KYC-required products need business owner status
+            // Check user type
+            const userCheck = await client.query(
+                `SELECT user_type FROM users WHERE id = $1`,
+                [req.user.id]
+            );
+
+            const userType = userCheck.rows[0]?.user_type;
+
+            // If student, tell them to upgrade to business
+            if (userType === "student") {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "KYC-required products can only be purchased by business owners. Please upgrade your account by adding business information.",
+                    requires_business_upgrade: true,
+                    user_type: "student",
+                });
+            }
+
+            // Check if user has Product KYC (Business Owner KYC)
+            const productKycCheck = await client.query(
                 `SELECT id, status FROM product_kyc_verifications WHERE user_id = $1`,
                 [req.user.id]
             );
-            
-            if (kycCheck.rows.length === 0) {
+
+            // If no Product KYC, they need to complete Business Owner KYC
+            if (productKycCheck.rows.length === 0) {
                 await client.query("ROLLBACK");
                 return res.status(403).json({
                     success: false,
-                    message: "Product KYC verification is required before purchasing these items. Please complete your Product KYC first.",
-                    requires_product_kyc: true,
-                    kyc_status: "not_completed"
+                    message:
+                        "Business Owner KYC verification is required before purchasing KYC-required products. Please complete your Business Owner KYC.",
+                    requires_business_kyc: true,
+                    kyc_status: "not_completed",
                 });
             }
-            
-            const kyc = kycCheck.rows[0];
-            if (kyc.status !== "verified") {
+
+            const productKyc = productKycCheck.rows[0];
+            if (productKyc.status !== "verified") {
                 await client.query("ROLLBACK");
                 return res.status(403).json({
                     success: false,
-                    message: `Your Product KYC verification is ${kyc.status}. Please complete and verify your Product KYC before purchasing.`,
-                    requires_product_kyc: true,
-                    kyc_status: kyc.status
+                    message: `Your Business Owner KYC verification is ${productKyc.status}. Please complete and verify your Business Owner KYC before purchasing.`,
+                    requires_business_kyc: true,
+                    kyc_status: productKyc.status,
                 });
+            }
+
+            // Check if product terms accepted
+            const productTermsCheck = await client.query(
+                `SELECT product_terms_accepted_at FROM users WHERE id = $1`,
+                [req.user.id]
+            );
+
+            if (!productTermsCheck.rows[0]?.product_terms_accepted_at) {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "Product terms acceptance is required before purchasing KYC-required products.",
+                    requires_product_terms: true,
+                });
+            }
+
+            // Set user type to business_owner if not set
+            if (!userType) {
+                await client.query(
+                    "UPDATE users SET user_type = 'business_owner' WHERE id = $1",
+                    [req.user.id]
+                );
             }
         }
-        
+
         for (const item of items) {
             const p = byId.get(item.product_id);
             if (!p || !p.is_active) {
@@ -202,7 +249,7 @@ const createOrder = async (req, res, next) => {
                     itemInfo.quantity,
                     itemInfo.basePrice,
                     itemInfo.isPricing ? itemInfo.totalPrice : null,
-                    itemInfo.isPricing ? 'bulk_pricing' : 'regular',
+                    itemInfo.isPricing ? "bulk_pricing" : "regular",
                     p.product_type,
                 ]
             );

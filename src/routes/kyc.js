@@ -2,11 +2,13 @@ const express = require("express");
 const router = express.Router();
 const {
     submitKYC,
+    upgradeToBusiness,
     getMyKYC,
     getAllKYC,
     getKYCById,
     verifyKYC,
     uploadFields,
+    uploadBusinessProof,
 } = require("../controllers/kycController");
 const { authenticate } = require("../middleware/auth");
 const { isAdmin } = require("../middleware/auth");
@@ -16,6 +18,7 @@ const jsonParser = express.json({ limit: "50mb" });
 
 // User routes (authenticated)
 router.post("/", authenticate, uploadFields, submitKYC);
+router.post("/upgrade-to-business", authenticate, uploadBusinessProof, upgradeToBusiness);
 router.get("/me", authenticate, getMyKYC);
 
 // Admin routes

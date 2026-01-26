@@ -424,46 +424,75 @@ const purchaseCourse = async (req, res, next) => {
             });
         }
 
-        // Check if user has completed KYC verification
-        const kycCheck = await client.query(
-            `SELECT id, status FROM kyc_verifications WHERE user_id = $1`,
+        // Check user type and course terms
+        const userCheck = await client.query(
+            `SELECT user_type, course_terms_accepted_at FROM users WHERE id = $1`,
             [userId]
         );
 
-        if (
-            kycCheck.rows.length === 0 ||
-            kycCheck.rows[0].status !== "verified"
-        ) {
+        if (userCheck.rows.length === 0) {
             await client.query("ROLLBACK");
-            return res.status(403).json({
+            return res.status(404).json({
                 success: false,
-                message:
-                    "KYC verification is required before purchasing courses. Please complete your KYC first.",
-                requires_kyc: true,
-                kyc_status:
-                    kycCheck.rows.length > 0
-                        ? kycCheck.rows[0].status
-                        : "not_completed",
+                message: "User not found",
             });
         }
 
-        // Check if user has accepted terms and conditions
-        const userCheck = await client.query(
-            `SELECT terms_accepted_at FROM users WHERE id = $1`,
-            [userId]
-        );
+        const user = userCheck.rows[0];
 
-        if (
-            userCheck.rows.length === 0 ||
-            !userCheck.rows[0].terms_accepted_at
-        ) {
-            await client.query("ROLLBACK");
-            return res.status(403).json({
-                success: false,
-                message:
-                    "Terms and conditions acceptance is required before purchasing courses.",
-                requires_terms_acceptance: true,
-            });
+        // Business owners can buy courses by just accepting course terms
+        if (user.user_type === "business_owner") {
+            // Check if course terms accepted
+            if (!user.course_terms_accepted_at) {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                    success: false,
+                    message: "Course terms acceptance is required before purchasing courses.",
+                    requires_course_terms: true,
+                });
+            }
+            // Business owners don't need KYC for courses - they can proceed
+        } else {
+            // Students (or users without type) need Student KYC
+            const kycCheck = await client.query(
+                `SELECT id, status FROM kyc_verifications WHERE user_id = $1`,
+                [userId]
+            );
+
+            if (
+                kycCheck.rows.length === 0 ||
+                kycCheck.rows[0].status !== "verified"
+            ) {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                    success: false,
+                    message:
+                        "Student KYC verification is required before purchasing courses. Please complete your KYC first.",
+                    requires_student_kyc: true,
+                    kyc_status:
+                        kycCheck.rows.length > 0
+                            ? kycCheck.rows[0].status
+                            : "not_completed",
+                });
+            }
+
+            // Check if course terms accepted
+            if (!user.course_terms_accepted_at) {
+                await client.query("ROLLBACK");
+                return res.status(403).json({
+                    success: false,
+                    message: "Course terms acceptance is required before purchasing courses.",
+                    requires_course_terms: true,
+                });
+            }
+
+            // Set user type to student if not set
+            if (!user.user_type) {
+                await client.query(
+                    "UPDATE users SET user_type = 'student' WHERE id = $1",
+                    [userId]
+                );
+            }
         }
 
         // Create order for course purchase

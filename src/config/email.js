@@ -222,6 +222,104 @@ const sendMultipleDeviceWarningEmail = async (
     return await sendEmail(userEmail, subject, html);
 };
 
+/**
+ * Send KYC approved email
+ */
+const sendKYCApprovedEmail = async (userEmail, userName, kycType = "Student KYC") => {
+    const subject = `${kycType} Verification Approved!`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">✅ ${kycType} Verification Approved!</h2>
+            <p>Hi ${userName},</p>
+            <p>Great news! Your ${kycType} verification has been approved.</p>
+            
+            ${kycType === "Student KYC" ? `
+            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>You can now:</strong></p>
+                <ul style="margin: 10px 0;">
+                    <li>Purchase courses directly</li>
+                    <li>Buy regular products</li>
+                    <li>Upgrade to Business Owner to purchase KYC-required products</li>
+                </ul>
+            </div>
+            ` : `
+            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>You can now:</strong></p>
+                <ul style="margin: 10px 0;">
+                    <li>Purchase courses</li>
+                    <li>Buy all products including KYC-required items</li>
+                    <li>Place bulk orders</li>
+                </ul>
+            </div>
+            `}
+            
+            <p>Start exploring our platform and make your first purchase!</p>
+            <p>Best regards,<br>E-Learning Platform Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
+ * Send KYC rejected email
+ */
+const sendKYCRejectedEmail = async (userEmail, userName, reason, kycType = "Student KYC") => {
+    const subject = `${kycType} Verification Needs Review`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #dc3545;">⚠️ ${kycType} Verification Needs Review</h2>
+            <p>Hi ${userName},</p>
+            <p>We've reviewed your ${kycType} submission and unfortunately we need some clarification.</p>
+            
+            <div style="background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>Reason:</strong></p>
+                <p style="margin: 10px 0;">${reason}</p>
+            </div>
+            
+            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>What's next?</strong></p>
+                <ul style="margin: 10px 0;">
+                    <li>Review the reason above</li>
+                    <li>Prepare the required documents</li>
+                    <li>Resubmit your ${kycType} information</li>
+                </ul>
+            </div>
+            
+            <p>If you have any questions, please contact our support team.</p>
+            <p>Best regards,<br>E-Learning Platform Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
+ * Send KYC pending email (when submitted)
+ */
+const sendKYCPendingEmail = async (userEmail, userName, kycType = "Student KYC") => {
+    const subject = `${kycType} Submitted Successfully`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #B00000;">📋 ${kycType} Submitted!</h2>
+            <p>Hi ${userName},</p>
+            <p>Thank you for submitting your ${kycType} information.</p>
+            
+            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>What happens next?</strong></p>
+                <p style="margin: 10px 0;">Our team will review your submission during business hours (9 AM - 6 PM, business days). You'll receive an email notification once your verification is approved.</p>
+            </div>
+            
+            <div style="background-color: #d1ecf1; border-left: 4px solid #17a2b8; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>Review Time:</strong></p>
+                <p style="margin: 10px 0;">Usually within 1-2 business days</p>
+            </div>
+            
+            <p>Thank you for your patience!</p>
+            <p>Best regards,<br>E-Learning Platform Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
 module.exports = {
     sendEmail,
     sendWelcomeEmail,
@@ -229,4 +327,7 @@ module.exports = {
     sendCourseAccessRejectedEmail,
     sendPasswordResetEmail,
     sendMultipleDeviceWarningEmail,
+    sendKYCApprovedEmail,
+    sendKYCRejectedEmail,
+    sendKYCPendingEmail,
 };
