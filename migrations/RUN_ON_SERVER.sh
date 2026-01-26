@@ -18,7 +18,9 @@ NC='\033[0m' # No Color
 
 # Load environment variables
 if [ -f "../.env" ]; then
-    export $(cat ../.env | grep -v '^#' | xargs)
+    set -a
+    source <(cat ../.env | grep -v '^#' | grep -v '^$' | sed 's/\r$//')
+    set +a
     echo -e "${GREEN}✓${NC} Loaded .env file"
 else
     echo -e "${RED}✗${NC} .env file not found!"
@@ -61,7 +63,15 @@ fi
 echo "🚀 Running migration..."
 echo ""
 
-PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f phase1_complete_new_kyc_system.sql
+# Method 1: Try with DATABASE_URL directly
+echo "Attempting connection with DATABASE_URL..."
+psql "$DATABASE_URL" -f phase1_complete_new_kyc_system.sql 2>/dev/null
+
+# If that fails, try with parsed credentials
+if [ $? -ne 0 ]; then
+    echo "Trying with parsed credentials..."
+    PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f phase1_complete_new_kyc_system.sql
+fi
 
 if [ $? -eq 0 ]; then
     echo ""
