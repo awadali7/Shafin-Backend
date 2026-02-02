@@ -47,10 +47,10 @@ const upload = multer({
 });
 
 // Middleware for handling file uploads
-// Minimum 2 ID proofs, optional business proofs
+// Minimum 2 ID proofs, minimum 1 business proof (REQUIRED)
 const uploadFields = upload.fields([
     { name: "id_proofs", maxCount: 10 }, // Allow up to 10 ID proofs
-    { name: "business_proofs", maxCount: 10 }, // Optional business proofs
+    { name: "business_proofs", maxCount: 10 }, // Business proofs (REQUIRED)
 ]);
 
 /**
@@ -83,8 +83,19 @@ const submitProductKYC = async (req, res, next) => {
             });
         }
 
+        // Business proof is now REQUIRED
+        if (
+            !req.files.business_proofs ||
+            req.files.business_proofs.length < 1
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "At least 1 Business proof document is required",
+            });
+        }
+
         const idProofFiles = req.files.id_proofs; // Array of files
-        const businessProofFiles = req.files.business_proofs || []; // Optional
+        const businessProofFiles = req.files.business_proofs; // REQUIRED
 
         // Generate file URLs
         const idProofUrls = idProofFiles.map(
@@ -123,6 +134,14 @@ const submitProductKYC = async (req, res, next) => {
                 }
             });
 
+            // Automatically set user_type to 'business_owner' if not already set
+            await query(
+                `UPDATE users 
+                 SET user_type = 'business_owner' 
+                 WHERE id = $1 AND user_type IS NULL`,
+                [userId]
+            );
+
             // Update existing KYC
             const result = await query(
                 `UPDATE product_kyc_verifications 
@@ -150,6 +169,14 @@ const submitProductKYC = async (req, res, next) => {
                 data: result.rows[0],
             });
         }
+
+        // Automatically set user_type to 'business_owner' if not already set
+        await query(
+            `UPDATE users 
+             SET user_type = 'business_owner' 
+             WHERE id = $1 AND user_type IS NULL`,
+            [userId]
+        );
 
         // Create new KYC record
         const result = await query(

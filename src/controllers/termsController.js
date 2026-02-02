@@ -164,6 +164,7 @@ const getTermsStatus = async (req, res, next) => {
 
 /**
  * Set user type (student or business_owner)
+ * Users can change selection BEFORE completing KYC
  */
 const setUserType = async (req, res, next) => {
     try {
@@ -178,7 +179,7 @@ const setUserType = async (req, res, next) => {
             });
         }
 
-        // Check if user type already set
+        // Check current user type and KYC status
         const userCheck = await query(
             "SELECT user_type FROM users WHERE id = $1",
             [userId]
@@ -191,15 +192,53 @@ const setUserType = async (req, res, next) => {
             });
         }
 
-        if (userCheck.rows[0].user_type) {
-            return res.status(400).json({
-                success: false,
-                message: `User type already set to '${userCheck.rows[0].user_type}'`,
-                current_type: userCheck.rows[0].user_type,
+        const currentUserType = userCheck.rows[0].user_type;
+
+        // If user type is already set to the same value, just return success
+        if (currentUserType === user_type) {
+            return res.json({
+                success: true,
+                message: `User type already set to '${user_type}'`,
+                data: { user_type },
             });
         }
 
-        // Set user type
+        // If user type is set to something else, check if they've completed KYC
+        if (currentUserType) {
+            // Check if user has completed KYC for their current type
+            let hasCompletedKYC = false;
+
+            if (currentUserType === "student") {
+                // Check Student KYC
+                const kycCheck = await query(
+                    "SELECT status FROM kyc_verifications WHERE user_id = $1",
+                    [userId]
+                );
+                hasCompletedKYC = kycCheck.rows.length > 0 && kycCheck.rows[0].status === "verified";
+            } else if (currentUserType === "business_owner") {
+                // Check Product KYC
+                const productKycCheck = await query(
+                    "SELECT status FROM product_kyc_verifications WHERE user_id = $1",
+                    [userId]
+                );
+                hasCompletedKYC = productKycCheck.rows.length > 0 && productKycCheck.rows[0].status === "verified";
+            }
+
+            // If KYC is completed, don't allow changing user type
+            if (hasCompletedKYC) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Cannot change user type. You have already completed KYC verification as '${currentUserType}'. Contact support if you need to change your account type.`,
+                    current_type: currentUserType,
+                    has_verified_kyc: true,
+                });
+            }
+
+            // If no KYC completed yet, allow change (user probably clicked wrong option)
+            // This is okay - they just selected the wrong type before submitting KYC
+        }
+
+        // Set or update user type
         const result = await query(
             `UPDATE users 
              SET user_type = $1

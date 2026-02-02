@@ -153,6 +153,8 @@ const getAllProducts = async (req, res, next) => {
             cover_image: normalizeImageUrl(p.cover_image),
             images: normalizeImagesArray(p.images) || [],
             videos: normalizeVideosArray(p.videos) || [],
+            // Map tiered_pricing to quantity_pricing for frontend compatibility
+            quantity_pricing: p.tiered_pricing || [],
             in_stock:
                 p.product_type === "digital"
                     ? true
@@ -213,6 +215,8 @@ const getFeaturedProducts = async (req, res, next) => {
             cover_image: normalizeImageUrl(p.cover_image),
             images: normalizeImagesArray(p.images) || [],
             videos: normalizeVideosArray(p.videos) || [],
+            // Map tiered_pricing to quantity_pricing for frontend compatibility
+            quantity_pricing: p.tiered_pricing || [],
             in_stock:
                 p.product_type === "digital"
                     ? true
@@ -285,6 +289,8 @@ const getProductBySlug = async (req, res, next) => {
                 cover_image: normalizeImageUrl(p.cover_image),
                 images: normalizeImagesArray(p.images) || [],
                 videos: normalizeVideosArray(p.videos) || [],
+                // Map tiered_pricing to quantity_pricing for frontend compatibility
+                quantity_pricing: p.tiered_pricing || [],
                 in_stock:
                     p.product_type === "digital"
                         ? true
@@ -342,6 +348,8 @@ const adminGetAllProducts = async (req, res, next) => {
             cover_image: normalizeImageUrl(p.cover_image),
             images: normalizeImagesArray(p.images) || [],
             videos: normalizeVideosArray(p.videos) || [],
+            // Map tiered_pricing to quantity_pricing for frontend compatibility
+            quantity_pricing: p.tiered_pricing || [],
             in_stock:
                 p.product_type === "digital"
                     ? true
@@ -645,6 +653,8 @@ const adminCreateProduct = async (req, res, next) => {
                 cover_image: normalizeImageUrl(p.cover_image),
                 images: normalizeImagesArray(p.images) || [],
                 videos: normalizeVideosArray(p.videos) || [],
+                // Map tiered_pricing to quantity_pricing for frontend compatibility
+                quantity_pricing: p.tiered_pricing || [],
                 in_stock:
                     p.product_type === "digital"
                         ? true
@@ -932,6 +942,8 @@ const adminUpdateProduct = async (req, res, next) => {
                 cover_image: normalizeImageUrl(p.cover_image),
                 images: normalizeImagesArray(p.images) || [],
                 videos: normalizeVideosArray(p.videos) || [],
+                // Map tiered_pricing to quantity_pricing for frontend compatibility
+                quantity_pricing: p.tiered_pricing || [],
                 in_stock:
                     p.product_type === "digital"
                         ? true

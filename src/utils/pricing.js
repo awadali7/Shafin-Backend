@@ -2,8 +2,8 @@
  * Calculate price based on tiered pricing (quantity ranges)
  * @param {number} basePrice - Original price per item (fallback)
  * @param {number} quantity - Number of items
- * @param {Array} quantityPricing - Array like [{"min_qty": 1, "max_qty": 1, "price_per_item": 100}, {"min_qty": 2, "max_qty": 5, "price_per_item": 90}, ...]
- * @returns {Object} { totalPrice, pricePerItem, savings, appliedPricing }
+ * @param {Array} quantityPricing - Array like [{"min_qty": 1, "max_qty": 1, "price_per_item": 100, "courier_charge": 70}, ...]
+ * @returns {Object} { totalPrice, pricePerItem, courierCharge, itemsTotal, savings, appliedPricing }
  */
 function calculateQuantityPrice(basePrice, quantity, quantityPricing = []) {
     if (!Array.isArray(quantityPricing) || quantityPricing.length === 0) {
@@ -18,7 +18,7 @@ function calculateQuantityPrice(basePrice, quantity, quantityPricing = []) {
     }
 
     // Find the tier that matches this quantity
-    // Tier format: { min_qty: 2, max_qty: 5, price_per_item: 90 }
+    // Tier format: { min_qty: 2, max_qty: 5, price_per_item: 90, courier_charge: 70 }
     // max_qty can be null for unlimited
     const matchingTier = quantityPricing.find((tier) => {
         const minQty = Number(tier.min_qty || 1);
@@ -40,13 +40,17 @@ function calculateQuantityPrice(basePrice, quantity, quantityPricing = []) {
 
     // Apply tiered pricing
     const pricePerItem = Number(matchingTier.price_per_item);
-    const totalPrice = pricePerItem * quantity;
+    const courierCharge = Number(matchingTier.courier_charge || 0);
+    const itemsTotal = pricePerItem * quantity;
+    const totalPrice = itemsTotal + courierCharge;
     const regularTotalPrice = basePrice * quantity;
     const savings = regularTotalPrice - totalPrice;
 
     return {
         totalPrice: Math.round(totalPrice * 100) / 100,
         pricePerItem: Math.round(pricePerItem * 100) / 100,
+        courierCharge: Math.round(courierCharge * 100) / 100,
+        itemsTotal: Math.round(itemsTotal * 100) / 100,
         savings: Math.round(savings * 100) / 100,
         appliedPricing: matchingTier,
         isPricing: true,
@@ -69,6 +73,7 @@ function getAvailableQuantityPrices(basePrice, quantityPricing = []) {
             const minQty = Number(tier.min_qty || 1);
             const maxQty = tier.max_qty ? Number(tier.max_qty) : null;
             const pricePerItem = Number(tier.price_per_item);
+            const courierCharge = Number(tier.courier_charge || 0);
             const savingsPerItem = basePrice - pricePerItem;
             const savingsPercent = basePrice > 0 ? Math.round((savingsPerItem / basePrice) * 100) : 0;
 
@@ -76,6 +81,7 @@ function getAvailableQuantityPrices(basePrice, quantityPricing = []) {
                 min_qty: minQty,
                 max_qty: maxQty,
                 price_per_item: pricePerItem,
+                courier_charge: courierCharge,
                 savings_per_item: Math.round(savingsPerItem * 100) / 100,
                 savings_percent: savingsPercent,
             };
@@ -113,6 +119,7 @@ function getNextPricingOption(currentQty, quantityPricing = []) {
         min_qty: Number(nextTier.min_qty || 1),
         max_qty: nextTier.max_qty ? Number(nextTier.max_qty) : null,
         price_per_item: Number(nextTier.price_per_item),
+        courier_charge: Number(nextTier.courier_charge || 0),
         itemsNeeded: Number(nextTier.min_qty || 1) - currentQty,
     };
 }

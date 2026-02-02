@@ -454,6 +454,56 @@ const acceptTerms = async (req, res, next) => {
     }
 };
 
+/**
+ * Get user navigation stats for sidebar visibility
+ */
+const getNavigationStats = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+
+        // Check if user has any courses (via course_access)
+        const coursesResult = await query(
+            `SELECT COUNT(*) as count 
+             FROM course_access 
+             WHERE user_id = $1 AND is_active = true`,
+            [userId]
+        );
+        const hasCourses = parseInt(coursesResult.rows[0]?.count || '0', 10) > 0;
+
+        // Check if user has any orders
+        const ordersResult = await query(
+            `SELECT COUNT(*) as count 
+             FROM orders 
+             WHERE user_id = $1`,
+            [userId]
+        );
+        const hasOrders = parseInt(ordersResult.rows[0]?.count || '0', 10) > 0;
+
+        // Check if user has any digital downloads (product entitlements)
+        const downloadsResult = await query(
+            `SELECT COUNT(*) as count 
+             FROM product_entitlements 
+             WHERE user_id = $1`,
+            [userId]
+        );
+        const hasDownloads = parseInt(downloadsResult.rows[0]?.count || '0', 10) > 0;
+
+        res.json({
+            success: true,
+            data: {
+                hasCourses,
+                hasOrders,
+                hasDownloads,
+                coursesCount: parseInt(coursesResult.rows[0]?.count || '0', 10),
+                ordersCount: parseInt(ordersResult.rows[0]?.count || '0', 10),
+                downloadsCount: parseInt(downloadsResult.rows[0]?.count || '0', 10),
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getProfile,
     updateProfile,
@@ -461,4 +511,5 @@ module.exports = {
     getCourseProgress,
     getUserDashboard,
     acceptTerms,
+    getNavigationStats,
 };

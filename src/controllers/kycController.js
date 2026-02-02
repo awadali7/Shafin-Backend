@@ -144,6 +144,14 @@ const submitKYC = async (req, res, next) => {
                 }
             }
 
+            // Automatically set user_type to 'student' if not already set
+            await query(
+                `UPDATE users 
+                 SET user_type = 'student' 
+                 WHERE id = $1 AND user_type IS NULL`,
+                [userId]
+            );
+
             // Update existing KYC
             // Use first URL for id_proof_url (backward compatibility) and all URLs for id_proof_urls
             const firstIdProofUrl = idProofUrls.length > 0 ? idProofUrls[0] : null;
@@ -192,6 +200,14 @@ const submitKYC = async (req, res, next) => {
                 data: result.rows[0],
             });
         }
+
+        // Automatically set user_type to 'student' if not already set
+        await query(
+            `UPDATE users 
+             SET user_type = 'student' 
+             WHERE id = $1 AND user_type IS NULL`,
+            [userId]
+        );
 
         // Create new KYC record
         // Use first URL for id_proof_url (backward compatibility - NOT NULL constraint) and all URLs for id_proof_urls

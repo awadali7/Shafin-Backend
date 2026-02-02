@@ -385,7 +385,7 @@ const verifyRazorpayPayment = async (req, res, next) => {
                     oi.product_id,
                     oi.product_type,
                     oi.quantity,
-                    oi.price,
+                    oi.unit_price,
                     p.name as product_name
                  FROM order_items oi
                  LEFT JOIN products p ON oi.product_id = p.id
@@ -416,7 +416,7 @@ const verifyRazorpayPayment = async (req, res, next) => {
                         product_name: p.product_name || `Product ${p.product_id}`,
                         product_type: p.product_type,
                         quantity: p.quantity,
-                        price: p.price,
+                        price: p.unit_price,
                     })),
                     product_count: productCount,
                 }
@@ -635,7 +635,7 @@ const razorpayWebhook = async (req, res, next) => {
                             oi.product_id,
                             oi.product_type,
                             oi.quantity,
-                            oi.price,
+                            oi.unit_price,
                             p.name as product_name
                          FROM order_items oi
                          LEFT JOIN products p ON oi.product_id = p.id
@@ -666,7 +666,7 @@ const razorpayWebhook = async (req, res, next) => {
                                 product_name: p.product_name || `Product ${p.product_id}`,
                                 product_type: p.product_type,
                                 quantity: p.quantity,
-                                price: p.price,
+                                price: p.unit_price,
                             })),
                             product_count: productCount,
                         }

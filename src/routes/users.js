@@ -13,6 +13,7 @@ router.post("/accept-terms", userController.acceptTerms);
 router.get("/dashboard", userController.getUserDashboard);
 router.get("/courses", userController.getUserCourses);
 router.get("/courses/:courseId/progress", userController.getCourseProgress);
+router.get("/navigation-stats", userController.getNavigationStats);
 router.get(
     "/product-entitlements",
     entitlementController.getMyProductEntitlements
