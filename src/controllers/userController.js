@@ -8,7 +8,8 @@ const { normalizeImageUrl } = require("../utils/helpers");
 const getProfile = async (req, res, next) => {
     try {
         const result = await query(
-            `SELECT id, email, first_name, last_name, role, email_verified, created_at
+            `SELECT id, email, first_name, last_name, role, email_verified, created_at, 
+                    user_type, profile_picture, terms_accepted_at, last_login_at, last_login_ip, last_login_device
              FROM users WHERE id = $1`,
             [req.user.id]
         );
@@ -80,6 +81,64 @@ const updateProfile = async (req, res, next) => {
         res.json({
             success: true,
             message: "Profile updated successfully",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Update profile picture
+ */
+const updateProfilePicture = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "No file uploaded",
+            });
+        }
+
+        const baseUrl = process.env.BACKEND_URL || "http://localhost:5001";
+        const profilePictureUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+
+        // Update user's profile picture in database
+        const result = await query(
+            `UPDATE users 
+             SET profile_picture = $1, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2
+             RETURNING id, email, first_name, last_name, role, profile_picture`,
+            [profilePictureUrl, req.user.id]
+        );
+
+        res.json({
+            success: true,
+            message: "Profile picture updated successfully",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Delete profile picture
+ */
+const deleteProfilePicture = async (req, res, next) => {
+    try {
+        // Update user's profile picture to NULL
+        const result = await query(
+            `UPDATE users 
+             SET profile_picture = NULL, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1
+             RETURNING id, email, first_name, last_name, role, profile_picture`,
+            [req.user.id]
+        );
+
+        res.json({
+            success: true,
+            message: "Profile picture deleted successfully",
             data: result.rows[0],
         });
     } catch (error) {
@@ -507,6 +566,8 @@ const getNavigationStats = async (req, res, next) => {
 module.exports = {
     getProfile,
     updateProfile,
+    updateProfilePicture,
+    deleteProfilePicture,
     getUserCourses,
     getCourseProgress,
     getUserDashboard,

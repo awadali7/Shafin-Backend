@@ -243,7 +243,7 @@ const register = async (req, res, next) => {
         const result = await query(
             `INSERT INTO users (email, password_hash, first_name, last_name)
              VALUES ($1, $2, $3, $4)
-             RETURNING id, email, first_name, last_name, role, created_at`,
+             RETURNING id, email, first_name, last_name, role, created_at, user_type`,
             [email, password_hash, first_name, last_name]
         );
 
@@ -299,6 +299,7 @@ const register = async (req, res, next) => {
                     first_name: user.first_name,
                     last_name: user.last_name,
                     role: user.role,
+                    user_type: user.user_type,
                 },
                 token,
                 refreshToken,
@@ -319,7 +320,7 @@ const login = async (req, res, next) => {
 
         // Find user
         const result = await query(
-            "SELECT id, email, password_hash, first_name, last_name, role, is_active FROM users WHERE email = $1",
+            "SELECT id, email, password_hash, first_name, last_name, role, is_active, user_type FROM users WHERE email = $1",
             [email]
         );
 
@@ -447,6 +448,7 @@ const login = async (req, res, next) => {
                     first_name: user.first_name,
                     last_name: user.last_name,
                     role: user.role,
+                    user_type: user.user_type,
                 },
                 token,
                 refreshToken,

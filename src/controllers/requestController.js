@@ -67,29 +67,29 @@ const createRequest = async (req, res, next) => {
 
         // Only check KYC for non-admin users
         if (userRole !== 'admin') {
-            // Check if user has completed KYC verification
-            const kycCheck = await query(
-                `SELECT id, status FROM kyc_verifications WHERE user_id = $1`,
-                [userId]
-            );
+        // Check if user has completed KYC verification
+        const kycCheck = await query(
+            `SELECT id, status FROM kyc_verifications WHERE user_id = $1`,
+            [userId]
+        );
 
-            if (kycCheck.rows.length === 0) {
-                return res.status(403).json({
-                    success: false,
-                    message:
-                        "KYC verification is required before requesting course access. Please complete your KYC first.",
-                    requires_kyc: true,
-                });
-            }
+        if (kycCheck.rows.length === 0) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    "KYC verification is required before requesting course access. Please complete your KYC first.",
+                requires_kyc: true,
+            });
+        }
 
-            const kyc = kycCheck.rows[0];
-            if (kyc.status !== "verified") {
-                return res.status(403).json({
-                    success: false,
-                    message: `Your KYC verification is ${kyc.status}. Please complete and verify your KYC before requesting course access.`,
-                    requires_kyc: true,
-                    kyc_status: kyc.status,
-                });
+        const kyc = kycCheck.rows[0];
+        if (kyc.status !== "verified") {
+            return res.status(403).json({
+                success: false,
+                message: `Your KYC verification is ${kyc.status}. Please complete and verify your KYC before requesting course access.`,
+                requires_kyc: true,
+                kyc_status: kyc.status,
+            });
             }
         }
 

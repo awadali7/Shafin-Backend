@@ -6,6 +6,7 @@ const {
     getAllProductKYC,
     getProductKYCById,
     verifyProductKYC,
+    getProductKYCStatus,
     uploadFields,
 } = require("../controllers/productKycController");
 const { authenticate, isAdmin } = require("../middleware/auth");
@@ -16,6 +17,7 @@ const jsonParser = express.json({ limit: "50mb" });
 // User routes (authenticated)
 router.post("/", authenticate, uploadFields, submitProductKYC);
 router.get("/me", authenticate, getMyProductKYC);
+router.get("/status", authenticate, getProductKYCStatus);
 
 // Admin routes
 router.get("/", authenticate, isAdmin, getAllProductKYC);

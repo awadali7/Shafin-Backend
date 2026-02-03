@@ -7,6 +7,7 @@ const {
     getAllKYC,
     getKYCById,
     verifyKYC,
+    getKYCStatus,
     uploadFields,
     uploadBusinessProof,
 } = require("../controllers/kycController");
@@ -20,6 +21,7 @@ const jsonParser = express.json({ limit: "50mb" });
 router.post("/", authenticate, uploadFields, submitKYC);
 router.post("/upgrade-to-business", authenticate, uploadBusinessProof, upgradeToBusiness);
 router.get("/me", authenticate, getMyKYC);
+router.get("/status", authenticate, getKYCStatus);
 
 // Admin routes
 router.get("/", authenticate, isAdmin, getAllKYC);

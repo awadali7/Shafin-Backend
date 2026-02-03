@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     email_verified BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
+    profile_picture VARCHAR(500), -- Optional profile picture URL/path
+    user_type VARCHAR(20) CHECK (user_type IN ('student', 'business_owner')),
     terms_accepted_at TIMESTAMP, -- Required for course purchase
     last_login_at TIMESTAMP,
     last_login_ip VARCHAR(45),
@@ -21,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_user_type ON users(user_type);
 CREATE INDEX IF NOT EXISTS idx_users_terms_accepted ON users(terms_accepted_at);
 
 -- Create courses table

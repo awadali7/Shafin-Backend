@@ -437,12 +437,49 @@ const verifyProductKYC = async (req, res, next) => {
     }
 };
 
+/**
+ * Get Product KYC status for current user
+ */
+const getProductKYCStatus = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+
+        const result = await query(
+            `SELECT status, verified_at 
+             FROM product_kyc_verifications 
+             WHERE user_id = $1
+             ORDER BY created_at DESC 
+             LIMIT 1`,
+            [userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.json({
+                success: true,
+                data: {
+                    status: null,
+                    verified_at: null,
+                    message: "No Product KYC submission found"
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            data: result.rows[0]
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     submitProductKYC,
     getMyProductKYC,
     getAllProductKYC,
     getProductKYCById,
     verifyProductKYC,
+    getProductKYCStatus,
     uploadFields, // Export upload middleware
 };
 

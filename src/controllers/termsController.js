@@ -231,7 +231,7 @@ const setUserType = async (req, res, next) => {
                     message: `Cannot change user type. You have already completed KYC verification as '${currentUserType}'. Contact support if you need to change your account type.`,
                     current_type: currentUserType,
                     has_verified_kyc: true,
-                });
+            });
             }
 
             // If no KYC completed yet, allow change (user probably clicked wrong option)

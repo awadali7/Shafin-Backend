@@ -708,6 +708,42 @@ const verifyKYC = async (req, res, next) => {
     }
 };
 
+/**
+ * Get KYC status for current user
+ */
+const getKYCStatus = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+
+        const result = await query(
+            `SELECT status, verified_at 
+             FROM kyc_verifications 
+             WHERE user_id = $1
+             ORDER BY created_at DESC 
+             LIMIT 1`,
+            [userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.json({
+                success: true,
+                data: {
+                    status: null,
+                    verified_at: null,
+                    message: "No KYC submission found"
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            data: result.rows[0]
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     submitKYC,
     upgradeToBusiness,
@@ -715,6 +751,7 @@ module.exports = {
     getAllKYC,
     getKYCById,
     verifyKYC,
+    getKYCStatus,
     uploadFields, // Export upload middleware
     uploadBusinessProof, // Export business proof upload middleware
 };

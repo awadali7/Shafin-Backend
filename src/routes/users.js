@@ -3,12 +3,15 @@ const router = express.Router();
 const userController = require("../controllers/userController");
 const entitlementController = require("../controllers/entitlementController");
 const { authenticate } = require("../middleware/auth");
+const { upload } = require("../controllers/uploadController");
 
 // All routes require authentication
 router.use(authenticate);
 
 router.get("/profile", userController.getProfile);
 router.put("/profile", userController.updateProfile);
+router.post("/profile/picture", upload.single("profile_picture"), userController.updateProfilePicture);
+router.delete("/profile/picture", userController.deleteProfilePicture);
 router.post("/accept-terms", userController.acceptTerms);
 router.get("/dashboard", userController.getUserDashboard);
 router.get("/courses", userController.getUserCourses);
