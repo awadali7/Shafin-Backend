@@ -298,7 +298,35 @@ const getMyOrders = async (req, res, next) => {
              ORDER BY created_at DESC`,
             [req.user.id]
         );
-        res.json({ success: true, data: ordersRes.rows });
+        
+        // For each order, fetch its items with product details
+        const ordersWithItems = await Promise.all(
+            ordersRes.rows.map(async (order) => {
+                const itemsRes = await query(
+                    `SELECT
+                        oi.id,
+                        oi.product_id,
+                        oi.quantity,
+                        oi.unit_price,
+                        oi.product_type,
+                        p.name as product_name,
+                        p.slug as product_slug,
+                        p.cover_image
+                     FROM order_items oi
+                     JOIN products p ON p.id = oi.product_id
+                     WHERE oi.order_id = $1
+                     ORDER BY oi.created_at ASC`,
+                    [order.id]
+                );
+                
+                return {
+                    ...order,
+                    items: itemsRes.rows
+                };
+            })
+        );
+        
+        res.json({ success: true, data: ordersWithItems });
     } catch (error) {
         next(error);
     }
@@ -401,10 +429,12 @@ const adminGetAllOrders = async (req, res, next) => {
                 u.first_name,
                 u.last_name,
                 COUNT(oi.id) FILTER (WHERE oi.product_type = 'digital') as digital_items,
-                COUNT(oi.id) FILTER (WHERE oi.product_type = 'physical') as physical_items
+                COUNT(oi.id) FILTER (WHERE oi.product_type = 'physical') as physical_items,
+                STRING_AGG(DISTINCT p.name, ', ' ORDER BY p.name) as item_names
              FROM orders o
              JOIN users u ON u.id = o.user_id
              LEFT JOIN order_items oi ON oi.order_id = o.id
+             LEFT JOIN products p ON p.id = oi.product_id
              GROUP BY o.id, u.id, u.email, u.first_name, u.last_name
              ORDER BY o.created_at DESC
              LIMIT 200`
