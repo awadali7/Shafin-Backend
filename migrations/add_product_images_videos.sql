@@ -30,3 +30,4 @@ COMMENT ON COLUMN products.videos IS 'Array of video objects in JSONB format: [{
 
 
 
+

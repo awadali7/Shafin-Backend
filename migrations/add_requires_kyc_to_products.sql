@@ -34,3 +34,4 @@ ORDER BY ordinal_position;
 -- Example 2: Product that does NOT require KYC (default)
 -- UPDATE products SET requires_kyc = false WHERE slug = 'regular-item';
 
+

@@ -49,7 +49,7 @@ const upload = multer({
 // Middleware for handling file uploads
 const uploadFields = upload.fields([
     { name: "id_proof", maxCount: 10 }, // Allow up to 10 ID proof images
-    { name: "profile_photo", maxCount: 1 },
+    { name: "id_proof_2", maxCount: 1 },
 ]);
 
 // Middleware for business upgrade (optional business proof)
@@ -85,19 +85,19 @@ const submitKYC = async (req, res, next) => {
         }
 
         // Check if files are uploaded
-        if (!req.files || !req.files.id_proof || req.files.id_proof.length === 0 || !req.files.profile_photo) {
+        if (!req.files || !req.files.id_proof || req.files.id_proof.length === 0 || !req.files.id_proof_2) {
             return res.status(400).json({
                 success: false,
-                message: "At least one ID proof file and one profile photo are required",
+                message: "At least one ID proof file and one ID proof 2 are required",
             });
         }
 
         const idProofFiles = req.files.id_proof; // Array of files
-        const profilePhotoFile = req.files.profile_photo[0];
+        const idProof2File = req.files.id_proof_2[0];
 
         // Generate file URLs for all ID proof files
         const idProofUrls = idProofFiles.map(file => `/uploads/kyc/${file.filename}`);
-        const profilePhotoUrl = `/uploads/kyc/${profilePhotoFile.filename}`;
+        const idProof2Url = `/uploads/kyc/${idProof2File.filename}`;
 
         // Check if user already has a KYC record
         const existingKYC = await query(
@@ -133,14 +133,14 @@ const submitKYC = async (req, res, next) => {
                     fs.unlinkSync(oldIdProofPath);
                 }
             }
-            if (kyc.profile_photo_url) {
-                const oldPhotoPath = path.join(
+            if (kyc.id_proof_2_url) {
+                const oldIdProof2Path = path.join(
                     __dirname,
                     "../../",
-                    kyc.profile_photo_url
+                    kyc.id_proof_2_url
                 );
-                if (fs.existsSync(oldPhotoPath)) {
-                    fs.unlinkSync(oldPhotoPath);
+                if (fs.existsSync(oldIdProof2Path)) {
+                    fs.unlinkSync(oldIdProof2Path);
                 }
             }
 
@@ -159,7 +159,7 @@ const submitKYC = async (req, res, next) => {
                 `UPDATE kyc_verifications 
                  SET first_name = $1, last_name = $2, address = $3, 
                      contact_number = $4, whatsapp_number = $5,
-                     id_proof_url = $6, id_proof_urls = $7::jsonb, profile_photo_url = $8,
+                     id_proof_url = $6, id_proof_urls = $7::jsonb, id_proof_2_url = $8,
                      status = 'pending', rejection_reason = NULL,
                      verified_by = NULL, verified_at = NULL,
                      updated_at = CURRENT_TIMESTAMP
@@ -173,7 +173,7 @@ const submitKYC = async (req, res, next) => {
                     whatsapp_number,
                     firstIdProofUrl, // First URL for backward compatibility
                     JSON.stringify(idProofUrls), // Convert array to JSON string for JSONB column
-                    profilePhotoUrl,
+                    idProof2Url,
                     userId,
                 ]
             );
@@ -215,7 +215,7 @@ const submitKYC = async (req, res, next) => {
         const result = await query(
             `INSERT INTO kyc_verifications 
              (user_id, first_name, last_name, address, contact_number, 
-              whatsapp_number, id_proof_url, id_proof_urls, profile_photo_url, status)
+              whatsapp_number, id_proof_url, id_proof_urls, id_proof_2_url, status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'pending')
              RETURNING *`,
             [
@@ -227,7 +227,7 @@ const submitKYC = async (req, res, next) => {
                 whatsapp_number,
                 firstIdProofUrl, // First URL for backward compatibility (NOT NULL constraint)
                 JSON.stringify(idProofUrls), // Convert array to JSON string for JSONB column
-                profilePhotoUrl,
+                idProof2Url,
             ]
         );
 
@@ -396,7 +396,7 @@ const getMyKYC = async (req, res, next) => {
                 contact_number,
                 whatsapp_number,
                 COALESCE(id_proof_urls, CASE WHEN id_proof_url IS NOT NULL THEN jsonb_build_array(id_proof_url) ELSE NULL END) as id_proof_url,
-                profile_photo_url,
+                id_proof_2_url,
                 status,
                 rejection_reason,
                 verified_at,
@@ -446,7 +446,7 @@ const getAllKYC = async (req, res, next) => {
                 k.contact_number,
                 k.whatsapp_number,
                 COALESCE(k.id_proof_urls, CASE WHEN k.id_proof_url IS NOT NULL THEN jsonb_build_array(k.id_proof_url) ELSE NULL END) as id_proof_url,
-                k.profile_photo_url,
+                k.id_proof_2_url,
                 k.status,
                 k.rejection_reason,
                 k.verified_by,
@@ -527,7 +527,7 @@ const getKYCById = async (req, res, next) => {
                 k.contact_number,
                 k.whatsapp_number,
                 COALESCE(k.id_proof_urls, CASE WHEN k.id_proof_url IS NOT NULL THEN jsonb_build_array(k.id_proof_url) ELSE NULL END) as id_proof_url,
-                k.profile_photo_url,
+                k.id_proof_2_url,
                 k.status,
                 k.rejection_reason,
                 k.verified_by,

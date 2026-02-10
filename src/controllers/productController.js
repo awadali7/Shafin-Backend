@@ -60,7 +60,7 @@ function normalizeVideosArray(videos) {
 
 /**
  * Public: List products
- * Supports: ?q= ?category= ?type= (physical|digital)
+ * Supports: ?q= ?category= ?type= (physical|digital) ?page= ?limit=
  * Excludes digital products that the authenticated user has already purchased
  */
 const getAllProducts = async (req, res, next) => {
@@ -69,6 +69,11 @@ const getAllProducts = async (req, res, next) => {
         const category = (req.query.category || "").toString().trim();
         const type = (req.query.type || "").toString().trim();
         const userId = req.user?.id; // Optional: user ID if authenticated
+        
+        // Pagination parameters
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20)); // Default 20, max 100
+        const offset = (page - 1) * limit;
 
         const where = ["p.is_active = true"];
         const params = [];
@@ -109,12 +114,26 @@ const getAllProducts = async (req, res, next) => {
             i++;
         }
 
+        // Get total count for pagination
+        const countResult = await query(
+            `SELECT COUNT(*) as total
+             FROM products p
+             WHERE ${where.join(" AND ")}`,
+            params
+        );
+        const totalProducts = parseInt(countResult.rows[0].total);
+        const totalPages = Math.ceil(totalProducts / limit);
+
+        // Get paginated results
         const result = await query(
             `SELECT
                 p.id,
                 p.name,
                 p.slug,
                 p.description,
+                p.english_description,
+                p.malayalam_description,
+                p.hindi_description,
                 p.price,
                 p.category,
                 p.categories,
@@ -129,14 +148,16 @@ const getAllProducts = async (req, res, next) => {
                 p.reviews_count,
                 p.is_active,
                 p.is_coming_soon,
+                p.is_contact_only,
                 p.tiered_pricing,
                 p.requires_kyc,
                 p.created_at,
                 p.updated_at
              FROM products p
              WHERE ${where.join(" AND ")}
-             ORDER BY p.created_at DESC`,
-            params
+             ORDER BY p.created_at DESC
+             LIMIT $${i} OFFSET $${i + 1}`,
+            [...params, limit, offset]
         );
 
         const products = result.rows.map((p) => ({
@@ -161,7 +182,18 @@ const getAllProducts = async (req, res, next) => {
                     : (p.stock_quantity ?? 0) > 0,
         }));
 
-        res.json({ success: true, data: products });
+        res.json({
+            success: true,
+            data: products,
+            pagination: {
+                total: totalProducts,
+                page: page,
+                limit: limit,
+                totalPages: totalPages,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
+            },
+        });
     } catch (error) {
         next(error);
     }
@@ -178,6 +210,9 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.name,
                 p.slug,
                 p.description,
+                p.english_description,
+                p.malayalam_description,
+                p.hindi_description,
                 p.price,
                 p.category,
                 p.categories,
@@ -192,6 +227,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.reviews_count,
                 p.is_active,
                 p.is_coming_soon,
+                p.is_contact_only,
                 p.tiered_pricing,
                 p.requires_kyc,
                 p.created_at,
@@ -242,6 +278,9 @@ const getProductBySlug = async (req, res, next) => {
                 name,
                 slug,
                 description,
+                english_description,
+                malayalam_description,
+                hindi_description,
                 price,
                 category,
                 categories,
@@ -256,6 +295,7 @@ const getProductBySlug = async (req, res, next) => {
                 reviews_count,
                 is_active,
                 is_coming_soon,
+                is_contact_only,
                 tiered_pricing,
                 requires_kyc,
                 created_at,
@@ -313,6 +353,9 @@ const adminGetAllProducts = async (req, res, next) => {
                 name,
                 slug,
                 description,
+                english_description,
+                malayalam_description,
+                hindi_description,
                 price,
                 category,
                 categories,
@@ -327,6 +370,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 reviews_count,
                 is_active,
                 is_coming_soon,
+                is_contact_only,
                 tiered_pricing,
                 requires_kyc,
                 created_at,
@@ -374,6 +418,9 @@ const adminCreateProduct = async (req, res, next) => {
             name,
             slug,
             description = "",
+            english_description = "",
+            malayalam_description = "",
+            hindi_description = "",
             category = "",
             categories,
             product_type,
@@ -561,6 +608,9 @@ const adminCreateProduct = async (req, res, next) => {
                 name,
                 slug,
                 description,
+                english_description,
+                malayalam_description,
+                hindi_description,
                 price,
                 category,
                 categories,
@@ -576,17 +626,21 @@ const adminCreateProduct = async (req, res, next) => {
                 reviews_count,
                 is_featured,
                 is_coming_soon,
+                is_contact_only,
                 requires_kyc,
                 created_by,
                 tiered_pricing
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, $21
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
             )
             RETURNING
                 id,
                 name,
                 slug,
                 description,
+                english_description,
+                malayalam_description,
+                hindi_description,
                 price,
                 category,
                 categories,
@@ -601,6 +655,7 @@ const adminCreateProduct = async (req, res, next) => {
                 reviews_count,
                 is_active,
                 is_coming_soon,
+                is_contact_only,
                 tiered_pricing,
                 requires_kyc,
                 created_at,
@@ -609,6 +664,9 @@ const adminCreateProduct = async (req, res, next) => {
                 name,
                 slug,
                 description,
+                english_description,
+                malayalam_description,
+                hindi_description,
                 toNumber(price, 0),
                 categoriesArray.length > 0 ? categoriesArray[0] : null, // First category for backward compatibility
                 categoriesJson,
@@ -624,6 +682,7 @@ const adminCreateProduct = async (req, res, next) => {
                 Math.max(0, parseInt(reviews_count || "0", 10) || 0),
                 toBoolean(is_featured) || false,
                 toBoolean(req.body.is_coming_soon) || false,
+                toBoolean(req.body.is_contact_only) || false,
                 toBoolean(requires_kyc) || false,
                 req.user?.id || null,
                 // Handle tiered pricing (accepts either tiered_pricing or quantity_pricing or quantity_discounts from body)
@@ -691,6 +750,9 @@ const adminUpdateProduct = async (req, res, next) => {
             name,
             slug,
             description,
+            english_description,
+            malayalam_description,
+            hindi_description,
             category,
             categories,
             product_type,
@@ -702,6 +764,7 @@ const adminUpdateProduct = async (req, res, next) => {
             is_active,
             is_featured,
             is_coming_soon,
+            is_contact_only,
             requires_kyc,
             images,
             videos,
@@ -783,6 +846,9 @@ const adminUpdateProduct = async (req, res, next) => {
         setIfDefined("name", name);
         setIfDefined("slug", slug);
         setIfDefined("description", description);
+        setIfDefined("english_description", english_description);
+        setIfDefined("malayalam_description", malayalam_description);
+        setIfDefined("hindi_description", hindi_description);
 
         // Handle categories array update
         if (categories !== undefined) {
@@ -831,6 +897,8 @@ const adminUpdateProduct = async (req, res, next) => {
             setIfDefined("is_featured", toBoolean(is_featured) || false);
         if (is_coming_soon !== undefined)
             setIfDefined("is_coming_soon", toBoolean(is_coming_soon) || false);
+        if (is_contact_only !== undefined)
+            setIfDefined("is_contact_only", toBoolean(is_contact_only) || false);
         if (requires_kyc !== undefined)
             setIfDefined("requires_kyc", toBoolean(requires_kyc) || false);
 
@@ -905,6 +973,9 @@ const adminUpdateProduct = async (req, res, next) => {
                 name,
                 slug,
                 description,
+                english_description,
+                malayalam_description,
+                hindi_description,
                 price,
                 category,
                 categories,

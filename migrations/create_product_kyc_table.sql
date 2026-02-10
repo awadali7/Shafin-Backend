@@ -75,3 +75,4 @@ COMMENT ON TABLE product_kyc_verifications IS 'KYC verification for product purc
 COMMENT ON COLUMN product_kyc_verifications.id_proofs IS 'Array of personal ID proof URLs (minimum 2 required)';
 COMMENT ON COLUMN product_kyc_verifications.business_proofs IS 'Array of business proof URLs (optional)';
 
+

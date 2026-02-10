@@ -167,3 +167,4 @@ ORDER BY ordinal_position;
 
 SELECT 'Installation complete!' as status;
 
+

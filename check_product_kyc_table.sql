@@ -43,3 +43,4 @@ SELECT
     COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected
 FROM product_kyc_verifications;
 
+

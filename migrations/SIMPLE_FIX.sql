@@ -50,3 +50,4 @@ WHERE table_name = 'products' AND column_name = 'tiered_pricing';
 
 SELECT 'SUCCESS: Migration complete!' as status;
 
+

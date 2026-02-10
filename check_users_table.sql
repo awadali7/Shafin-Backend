@@ -17,3 +17,4 @@ LIMIT 1;
 -- Count total records
 SELECT COUNT(*) as total_product_kyc FROM product_kyc_verifications;
 
+

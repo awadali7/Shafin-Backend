@@ -374,3 +374,4 @@ CREATE INDEX idx_product_kyc_verifications_user_id ON product_kyc_verifications(
 **Backward Compatible**: Yes  
 **Breaking Changes**: None
 
+
