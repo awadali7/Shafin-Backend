@@ -24,6 +24,7 @@ const kycRoutes = require("./routes/kyc");
 const productKycRoutes = require("./routes/product-kyc");
 const termsRoutes = require("./routes/terms");
 const fixUserTypesRoutes = require("./routes/fix-user-types");
+const settingsRoutes = require("./routes/settings");
 
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
@@ -144,6 +145,7 @@ app.use("/api/orders", jsonParser, urlencodedParser);
 app.use("/api/payments", jsonParser, urlencodedParser);
 app.use("/api/terms", jsonParser, urlencodedParser);
 app.use("/api/fix-user-types", jsonParser, urlencodedParser);
+app.use("/api/settings", jsonParser, urlencodedParser);
 
 // DO NOT apply body parsers to these routes (they use multipart/form-data):
 // - /api/courses (POST uses multer for cover_image file uploads)
@@ -191,6 +193,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/terms", termsRoutes);
 app.use("/api/fix-user-types", fixUserTypesRoutes);
+app.use("/api/settings", settingsRoutes);
 
 // 404 handler
 app.use((req, res) => {

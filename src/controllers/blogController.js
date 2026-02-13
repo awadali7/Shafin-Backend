@@ -15,7 +15,6 @@ const getAllBlogPosts = async (req, res, next) => {
                 bp.id,
                 bp.title,
                 bp.slug,
-                bp.excerpt,
                 bp.cover_image,
                 bp.views,
                 bp.published_at,
@@ -30,9 +29,7 @@ const getAllBlogPosts = async (req, res, next) => {
         const queryParams = [];
 
         if (search) {
-            queryText += ` AND (bp.title ILIKE $${
-                queryParams.length + 1
-            } OR bp.excerpt ILIKE $${queryParams.length + 1})`;
+            queryText += ` AND bp.title ILIKE $${queryParams.length + 1}`;
             queryParams.push(`%${search}%`);
         }
 
@@ -52,7 +49,7 @@ const getAllBlogPosts = async (req, res, next) => {
         const countParams = [];
 
         if (search) {
-            countQuery += ` AND (bp.title ILIKE $1 OR bp.excerpt ILIKE $1)`;
+            countQuery += ` AND bp.title ILIKE $1`;
             countParams.push(`%${search}%`);
         }
 
@@ -96,7 +93,7 @@ const getAllBlogPostsAdmin = async (req, res, next) => {
                 bp.id,
                 bp.title,
                 bp.slug,
-                bp.excerpt,
+                bp.content,
                 bp.cover_image,
                 bp.is_published,
                 bp.views,
@@ -113,9 +110,7 @@ const getAllBlogPostsAdmin = async (req, res, next) => {
         const queryParams = [];
 
         if (search) {
-            queryText += ` AND (bp.title ILIKE $${
-                queryParams.length + 1
-            } OR bp.excerpt ILIKE $${queryParams.length + 1})`;
+            queryText += ` AND bp.title ILIKE $${queryParams.length + 1}`;
             queryParams.push(`%${search}%`);
         }
 
@@ -141,7 +136,7 @@ const getAllBlogPostsAdmin = async (req, res, next) => {
         const countParams = [];
 
         if (search) {
-            countQuery += ` AND (bp.title ILIKE $1 OR bp.excerpt ILIKE $1)`;
+            countQuery += ` AND bp.title ILIKE $1`;
             countParams.push(`%${search}%`);
         }
 
@@ -189,7 +184,6 @@ const getBlogPostBySlug = async (req, res, next) => {
                 bp.id,
                 bp.title,
                 bp.slug,
-                bp.excerpt,
                 bp.content,
                 bp.cover_image,
                 bp.views,
@@ -245,7 +239,6 @@ const getBlogPostById = async (req, res, next) => {
                 bp.id,
                 bp.title,
                 bp.slug,
-                bp.excerpt,
                 bp.content,
                 bp.cover_image,
                 bp.is_published,
@@ -290,7 +283,7 @@ const getBlogPostById = async (req, res, next) => {
  */
 const createBlogPost = async (req, res, next) => {
     try {
-        const { title, excerpt, content, cover_image, is_published } = req.body;
+        const { title, content, cover_image, is_published } = req.body;
         const authorId = req.user.id;
 
         if (!title || !content) {
@@ -320,13 +313,12 @@ const createBlogPost = async (req, res, next) => {
         const publishedAt = is_published ? new Date() : null;
 
         const result = await query(
-            `INSERT INTO blog_posts (title, slug, excerpt, content, cover_image, author_id, is_published, published_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO blog_posts (title, slug, content, cover_image, author_id, is_published, published_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING *`,
             [
                 title,
                 finalSlug,
-                excerpt || null,
                 content,
                 cover_image || null,
                 authorId,
@@ -352,7 +344,7 @@ const createBlogPost = async (req, res, next) => {
 const updateBlogPost = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { title, excerpt, content, cover_image, is_published } = req.body;
+        const { title, content, cover_image, is_published } = req.body;
 
         // Content is stored as-is to support HTML, images, iframes, videos, etc.
 
@@ -398,10 +390,6 @@ const updateBlogPost = async (req, res, next) => {
         if (title) {
             updateFields.push(`title = $${paramIndex++}`);
             updateValues.push(title);
-        }
-        if (excerpt !== undefined) {
-            updateFields.push(`excerpt = $${paramIndex++}`);
-            updateValues.push(excerpt);
         }
         if (content) {
             updateFields.push(`content = $${paramIndex++}`);

@@ -292,7 +292,9 @@ const createOrder = async (req, res, next) => {
 const getMyOrders = async (req, res, next) => {
     try {
         const ordersRes = await query(
-            `SELECT id, status, subtotal, shipping_cost, total, created_at, updated_at
+            `SELECT id, status, subtotal, shipping_cost, total, 
+                    tracking_number, tracking_url, estimated_delivery_date, 
+                    shipped_at, delivered_at, created_at, updated_at
              FROM orders
              WHERE user_id = $1
              ORDER BY created_at DESC`,
@@ -496,10 +498,98 @@ const adminGetOrderById = async (req, res, next) => {
     }
 };
 
+/**
+ * Admin: update tracking information for an order
+ */
+const adminUpdateTracking = async (req, res, next) => {
+    const client = await getClient();
+    try {
+        const { id } = req.params;
+        const { tracking_number, tracking_url, estimated_delivery_date, shipped_at } = req.body || {};
+
+        await client.query("BEGIN");
+
+        const orderRes = await client.query(
+            `SELECT id, status FROM orders WHERE id = $1`,
+            [id]
+        );
+
+        if (orderRes.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({
+                success: false,
+                message: "Order not found",
+            });
+        }
+
+        // Build dynamic update query
+        const updates = [];
+        const values = [id];
+        let paramCount = 2;
+
+        if (tracking_number !== undefined) {
+            updates.push(`tracking_number = $${paramCount}`);
+            values.push(tracking_number || null);
+            paramCount++;
+        }
+
+        if (tracking_url !== undefined) {
+            updates.push(`tracking_url = $${paramCount}`);
+            values.push(tracking_url || null);
+            paramCount++;
+        }
+
+        if (estimated_delivery_date !== undefined) {
+            updates.push(`estimated_delivery_date = $${paramCount}`);
+            values.push(estimated_delivery_date || null);
+            paramCount++;
+        }
+
+        if (shipped_at !== undefined) {
+            updates.push(`shipped_at = $${paramCount}`);
+            values.push(shipped_at || null);
+            paramCount++;
+        }
+
+        if (updates.length === 0) {
+            await client.query("ROLLBACK");
+            return res.status(400).json({
+                success: false,
+                message: "No fields to update",
+            });
+        }
+
+        const updateQuery = `
+            UPDATE orders
+            SET ${updates.join(', ')}
+            WHERE id = $1
+            RETURNING *
+        `;
+
+        const result = await client.query(updateQuery, values);
+
+        await client.query("COMMIT");
+
+        res.json({
+            success: true,
+            message: "Tracking information updated successfully",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        try {
+            await client.query("ROLLBACK");
+        } catch {}
+        next(error);
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     createOrder,
     getMyOrders,
     adminMarkOrderPaid,
     adminGetAllOrders,
     adminGetOrderById,
+    adminUpdateTracking,
 };

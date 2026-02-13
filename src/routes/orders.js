@@ -15,5 +15,6 @@ router.get("/my", orderController.getMyOrders);
 router.get("/admin/all", isAdmin, orderController.adminGetAllOrders);
 router.get("/admin/:id", isAdmin, orderController.adminGetOrderById);
 router.post("/:id/mark-paid", isAdmin, orderController.adminMarkOrderPaid);
+router.patch("/:id/tracking", isAdmin, orderController.adminUpdateTracking);
 
 module.exports = router;
