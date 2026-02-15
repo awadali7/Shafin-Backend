@@ -69,7 +69,20 @@ const getAllProducts = async (req, res, next) => {
         const category = (req.query.category || "").toString().trim();
         const type = (req.query.type || "").toString().trim();
         const userId = req.user?.id; // Optional: user ID if authenticated
-        
+
+        // Parse categoryPath - supports both array and repeated query params
+        let categoryPath = req.query.categoryPath;
+        if (categoryPath && !Array.isArray(categoryPath)) {
+            // If single value, convert to array
+            categoryPath = [categoryPath];
+        }
+        // Filter out empty strings and ensure all are strings
+        if (Array.isArray(categoryPath)) {
+            categoryPath = categoryPath
+                .map(c => String(c).trim())
+                .filter(c => c.length > 0);
+        }
+
         // Pagination parameters
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20)); // Default 20, max 100
@@ -79,8 +92,15 @@ const getAllProducts = async (req, res, next) => {
         const params = [];
         let i = 1;
 
-        // Filter by category - now checks if category is in the categories JSONB array
-        if (category && category.toLowerCase() !== "all") {
+        // Filter by category path (hierarchical) or single category (backward compatibility)
+        if (categoryPath && Array.isArray(categoryPath) && categoryPath.length > 0) {
+            // Hierarchical category path filtering
+            // Check if product's categories array starts with the selected path
+            where.push(`p.categories @> $${i}::jsonb`);
+            params.push(JSON.stringify(categoryPath));
+            i++;
+        } else if (category && category.toLowerCase() !== "all") {
+            // Backward compatibility: single category filter
             where.push(`p.categories @> $${i}::jsonb`);
             params.push(JSON.stringify([category]));
             i++;
@@ -151,6 +171,7 @@ const getAllProducts = async (req, res, next) => {
                 p.is_contact_only,
                 p.tiered_pricing,
                 p.requires_kyc,
+                p.product_detail_pdf,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -166,8 +187,8 @@ const getAllProducts = async (req, res, next) => {
             // For backward compatibility, keep category field (first category from array)
             category:
                 p.categories &&
-                Array.isArray(p.categories) &&
-                p.categories.length > 0
+                    Array.isArray(p.categories) &&
+                    p.categories.length > 0
                     ? p.categories[0]
                     : p.category || null,
             categories: p.categories || [],
@@ -230,6 +251,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.is_contact_only,
                 p.tiered_pricing,
                 p.requires_kyc,
+                p.product_detail_pdf,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -243,8 +265,8 @@ const getFeaturedProducts = async (req, res, next) => {
             type: p.product_type,
             category:
                 p.categories &&
-                Array.isArray(p.categories) &&
-                p.categories.length > 0
+                    Array.isArray(p.categories) &&
+                    p.categories.length > 0
                     ? p.categories[0]
                     : p.category || null,
             categories: p.categories || [],
@@ -298,6 +320,7 @@ const getProductBySlug = async (req, res, next) => {
                 is_contact_only,
                 tiered_pricing,
                 requires_kyc,
+                product_detail_pdf,
                 created_at,
                 updated_at
              FROM products
@@ -321,8 +344,8 @@ const getProductBySlug = async (req, res, next) => {
                 type: p.product_type,
                 category:
                     p.categories &&
-                    Array.isArray(p.categories) &&
-                    p.categories.length > 0
+                        Array.isArray(p.categories) &&
+                        p.categories.length > 0
                         ? p.categories[0]
                         : p.category || null,
                 categories: p.categories || [],
@@ -373,6 +396,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 is_contact_only,
                 tiered_pricing,
                 requires_kyc,
+                product_detail_pdf,
                 created_at,
                 updated_at
              FROM products
@@ -384,8 +408,8 @@ const adminGetAllProducts = async (req, res, next) => {
             type: p.product_type,
             category:
                 p.categories &&
-                Array.isArray(p.categories) &&
-                p.categories.length > 0
+                    Array.isArray(p.categories) &&
+                    p.categories.length > 0
                     ? p.categories[0]
                     : p.category || null,
             categories: p.categories || [],
@@ -454,6 +478,7 @@ const adminCreateProduct = async (req, res, next) => {
         const imageFiles = req.files?.images || [];
         const videoFiles = req.files?.videos || [];
         const videoThumbnailFiles = req.files?.video_thumbnails || [];
+        const productDetailPdfFile = req.files?.product_detail_pdf?.[0];
 
         let digitalFilePath = null;
         let digitalFileName = null;
@@ -469,7 +494,7 @@ const adminCreateProduct = async (req, res, next) => {
                 // Linking existing file
                 const linkedFileName = req.body.digital_file_name;
                 const linkedFilePath = path.join(__dirname, "../../private_uploads/digital", linkedFileName);
-                
+
                 if (fs.existsSync(linkedFilePath)) {
                     digitalFilePath = linkedFilePath;
                     digitalFileName = linkedFileName;
@@ -491,6 +516,10 @@ const adminCreateProduct = async (req, res, next) => {
         const baseUrl = process.env.BACKEND_URL || "http://localhost:5001";
         const coverImageUrl = coverImageFile
             ? `${baseUrl}/uploads/images/${coverImageFile.filename}`
+            : null;
+
+        const productDetailPdfUrl = productDetailPdfFile
+            ? `${baseUrl}/uploads/pdfs/${productDetailPdfFile.filename}`
             : null;
 
         // Process uploaded image files to URLs
@@ -629,9 +658,10 @@ const adminCreateProduct = async (req, res, next) => {
                 is_contact_only,
                 requires_kyc,
                 created_by,
-                tiered_pricing
+                tiered_pricing,
+                product_detail_pdf
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
             )
             RETURNING
                 id,
@@ -692,7 +722,8 @@ const adminCreateProduct = async (req, res, next) => {
                     try {
                         return typeof pricing === 'string' ? pricing : JSON.stringify(pricing);
                     } catch (e) { return null; }
-                })()
+                })(),
+                productDetailPdfUrl
             ]
         );
 
@@ -704,8 +735,8 @@ const adminCreateProduct = async (req, res, next) => {
                 type: p.product_type,
                 category:
                     p.categories &&
-                    Array.isArray(p.categories) &&
-                    p.categories.length > 0
+                        Array.isArray(p.categories) &&
+                        p.categories.length > 0
                         ? p.categories[0]
                         : p.category || null,
                 categories: p.categories || [],
@@ -785,17 +816,22 @@ const adminUpdateProduct = async (req, res, next) => {
 
         const coverImageFile = req.files?.cover_image?.[0];
         const digitalFile = req.files?.digital_file?.[0];
+        const productDetailPdfFile = req.files?.product_detail_pdf?.[0];
 
         const baseUrl = process.env.BACKEND_URL || "http://localhost:5001";
         const coverImageUrl = coverImageFile
             ? `${baseUrl}/uploads/images/${coverImageFile.filename}`
             : undefined;
 
+        const productDetailPdfUrl = productDetailPdfFile
+            ? `${baseUrl}/uploads/pdfs/${productDetailPdfFile.filename}`
+            : undefined;
+
         // Replace digital file if uploaded OR linked
         let digitalPath = undefined;
         let digitalName = undefined;
         let digitalFormat = undefined;
-        
+
         if (digitalFile) {
             // New file uploaded
             digitalPath = digitalFile.path;
@@ -818,18 +854,18 @@ const adminUpdateProduct = async (req, res, next) => {
             // Linking existing file
             const linkedFileName = req.body.digital_file_name;
             const linkedFilePath = path.join(__dirname, "../../private_uploads/digital", linkedFileName);
-            
+
             if (fs.existsSync(linkedFilePath)) {
-                 // Check if it's different from current
-                 if (current.digital_file_storage_path !== linkedFilePath) {
+                // Check if it's different from current
+                if (current.digital_file_storage_path !== linkedFilePath) {
                     digitalPath = linkedFilePath;
                     digitalName = linkedFileName;
                     digitalFormat = path.extname(linkedFileName).replace(".", "").toLowerCase();
-                    
+
                     // We don't delete the old file if we are just switching links, 
                     // unless the old file was exclusive to this product. 
                     // For now, let's NOT delete old files when switching links to avoid deleting shared files.
-                 }
+                }
             }
         }
 
@@ -918,6 +954,8 @@ const adminUpdateProduct = async (req, res, next) => {
             setIfDefined("digital_file_name", digitalName);
         if (digitalFormat !== undefined)
             setIfDefined("digital_file_format", digitalFormat);
+        if (productDetailPdfUrl !== undefined)
+            setIfDefined("product_detail_pdf", productDetailPdfUrl);
 
         // Handle images array (JSONB)
         if (images !== undefined) {
@@ -992,6 +1030,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 is_coming_soon,
                 requires_kyc,
                 tiered_pricing,
+                product_detail_pdf,
                 created_at,
                 updated_at`,
             values
@@ -1005,8 +1044,8 @@ const adminUpdateProduct = async (req, res, next) => {
                 type: p.product_type,
                 category:
                     p.categories &&
-                    Array.isArray(p.categories) &&
-                    p.categories.length > 0
+                        Array.isArray(p.categories) &&
+                        p.categories.length > 0
                         ? p.categories[0]
                         : p.category || null,
                 categories: p.categories || [],

@@ -15,8 +15,9 @@ const { authenticate, optionalAuthenticate, isAdmin } = require("../middleware/a
 const imagesDir = path.join(__dirname, "../../uploads/images");
 const videosDir = path.join(__dirname, "../../uploads/videos");
 const digitalDir = path.join(__dirname, "../../private_uploads/digital");
+const pdfsDir = path.join(__dirname, "../../uploads/pdfs");
 
-[imagesDir, videosDir, digitalDir].forEach((dir) => {
+[imagesDir, videosDir, digitalDir, pdfsDir].forEach((dir) => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -32,6 +33,9 @@ const storage = multer.diskStorage({
         }
         if (file.fieldname === "digital_file") {
             return cb(null, digitalDir);
+        }
+        if (file.fieldname === "product_detail_pdf") {
+            return cb(null, pdfsDir);
         }
         return cb(null, imagesDir);
     },
@@ -117,7 +121,7 @@ const fileFilter = (req, file, cb) => {
     }
 
     // Handle digital_file
-        if (file.fieldname === "digital_file") {
+    if (file.fieldname === "digital_file") {
         const allowedMimes = [
             "application/zip",
             "application/x-zip-compressed",
@@ -135,13 +139,19 @@ const fileFilter = (req, file, cb) => {
         );
     }
 
+    // Handle product_detail_pdf
+    if (file.fieldname === "product_detail_pdf") {
+        if (file.mimetype === "application/pdf") return cb(null, true);
+        return cb(new Error("Invalid file. Only PDF is allowed for product details."), false);
+    }
+
     return cb(new Error("Invalid file field"), false);
 };
 
 const upload = multer({
     storage,
     fileFilter,
-    limits: { 
+    limits: {
         fileSize: 2048 * 1024 * 1024, // 2GB (increased for large digital files)
         fieldSize: 100 * 1024 * 1024, // 100MB for non-file fields
     },
@@ -165,6 +175,7 @@ router.post(
     upload.fields([
         { name: "cover_image", maxCount: 1 },
         { name: "digital_file", maxCount: 1 },
+        { name: "product_detail_pdf", maxCount: 1 },
         { name: "images", maxCount: 20 }, // Allow up to 20 images
         { name: "videos", maxCount: 10 }, // Allow up to 10 videos
         { name: "video_thumbnails", maxCount: 10 }, // Allow up to 10 video thumbnails
@@ -178,6 +189,7 @@ router.put(
     upload.fields([
         { name: "cover_image", maxCount: 1 },
         { name: "digital_file", maxCount: 1 },
+        { name: "product_detail_pdf", maxCount: 1 },
         { name: "images", maxCount: 20 }, // Allow up to 20 images
         { name: "videos", maxCount: 10 }, // Allow up to 10 videos
         { name: "video_thumbnails", maxCount: 10 }, // Allow up to 10 video thumbnails

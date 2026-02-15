@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     profile_picture VARCHAR(500), -- Optional profile picture URL/path
     user_type VARCHAR(20) CHECK (user_type IN ('student', 'business_owner')),
     terms_accepted_at TIMESTAMP, -- Required for course purchase
+    product_terms_accepted_at TIMESTAMP, -- Required for product purchase
     last_login_at TIMESTAMP,
     last_login_ip VARCHAR(45),
     last_login_device JSONB,
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS courses (
     icon_name VARCHAR(100),
     is_active BOOLEAN DEFAULT true,
     created_by UUID REFERENCES users(id),
+    is_featured BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -322,6 +324,12 @@ CREATE TABLE IF NOT EXISTS products (
     reviews_count INTEGER NOT NULL DEFAULT 0,
 
     is_active BOOLEAN DEFAULT true,
+    is_featured BOOLEAN DEFAULT false,
+    is_coming_soon BOOLEAN DEFAULT false,
+    is_contact_only BOOLEAN DEFAULT false,
+    requires_kyc BOOLEAN DEFAULT false,
+    categories JSONB DEFAULT '[]'::jsonb,
+    tiered_pricing JSONB,
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -348,6 +356,7 @@ CREATE TABLE IF NOT EXISTS orders (
     payment_provider VARCHAR(50),
     payment_reference VARCHAR(255),
     subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    discount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     shipping_cost DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
 
@@ -360,6 +369,13 @@ CREATE TABLE IF NOT EXISTS orders (
     city VARCHAR(100),
     state VARCHAR(100),
     pincode VARCHAR(20),
+
+    -- Tracking and delivery information
+    tracking_number VARCHAR(255),
+    tracking_url TEXT,
+    estimated_delivery_date TIMESTAMP,
+    shipped_at TIMESTAMP,
+    delivered_at TIMESTAMP,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -378,6 +394,8 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_id UUID NOT NULL REFERENCES products(id),
     quantity INTEGER NOT NULL DEFAULT 1,
     unit_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    custom_price DECIMAL(10,2),
+    price_type VARCHAR(20) DEFAULT 'regular',
     product_type VARCHAR(20) NOT NULL CHECK (product_type IN ('physical','digital')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -432,6 +450,12 @@ CREATE TABLE IF NOT EXISTS kyc_verifications (
     rejection_reason TEXT,
     verified_by UUID REFERENCES users(id),
     verified_at TIMESTAMP,
+    id_proof_urls JSONB,
+    business_id VARCHAR(100),
+    business_location_link TEXT,
+    business_proof_url VARCHAR(500),
+    upgraded_to_business BOOLEAN DEFAULT false,
+    business_upgraded_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id)
@@ -444,4 +468,39 @@ CREATE INDEX IF NOT EXISTS idx_kyc_verifications_status ON kyc_verifications(sta
 DROP TRIGGER IF EXISTS update_kyc_verifications_updated_at ON kyc_verifications;
 CREATE TRIGGER update_kyc_verifications_updated_at BEFORE UPDATE ON kyc_verifications
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Create product_kyc_verifications table
+CREATE TABLE IF NOT EXISTS product_kyc_verifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL,
+    address TEXT NOT NULL,
+    contact_number VARCHAR(20) NOT NULL,
+    whatsapp_number VARCHAR(20) NOT NULL,
+    id_proofs JSONB DEFAULT '[]'::jsonb,
+    business_proofs JSONB DEFAULT '[]'::jsonb,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected')),
+    rejection_reason TEXT,
+    verified_by UUID REFERENCES users(id),
+    verified_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id)
+);
+
+-- Create trigger for product_kyc_verifications updated_at
+DROP TRIGGER IF EXISTS update_product_kyc_verifications_updated_at ON product_kyc_verifications;
+CREATE TRIGGER update_product_kyc_verifications_updated_at BEFORE UPDATE ON product_kyc_verifications
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Create site_settings table
+CREATE TABLE IF NOT EXISTS site_settings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value TEXT,
+    setting_type VARCHAR(50) DEFAULT 'text',
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
