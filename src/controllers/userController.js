@@ -423,10 +423,10 @@ const getUserDashboard = async (req, res, next) => {
                 const percentage =
                     progress.total_videos > 0
                         ? Math.round(
-                              (parseInt(progress.watched_videos) /
-                                  parseInt(progress.total_videos)) *
-                                  100
-                          )
+                            (parseInt(progress.watched_videos) /
+                                parseInt(progress.total_videos)) *
+                            100
+                        )
                         : 0;
 
                 return {
@@ -445,10 +445,10 @@ const getUserDashboard = async (req, res, next) => {
         const overallPercentage =
             stats.total_videos > 0
                 ? Math.round(
-                      (parseInt(stats.watched_videos) /
-                          parseInt(stats.total_videos)) *
-                          100
-                  )
+                    (parseInt(stats.watched_videos) /
+                        parseInt(stats.total_videos)) *
+                    100
+                )
                 : 0;
 
         // Normalize image URLs in latest videos
@@ -456,6 +456,37 @@ const getUserDashboard = async (req, res, next) => {
             ...video,
             cover_image: normalizeImageUrl(video.cover_image),
         }));
+
+        // Get latest orders (last 5)
+        const ordersResult = await query(
+            `SELECT id, status, total, created_at, tracking_number
+             FROM orders
+             WHERE user_id = $1
+             ORDER BY created_at DESC
+             LIMIT 5`,
+            [userId]
+        );
+
+        // Get digital entitlements (last 5)
+        const downloadsResult = await query(
+            `SELECT pe.id, pe.created_at, p.name as product_name, p.slug as product_slug, p.cover_image
+             FROM product_entitlements pe
+             JOIN products p ON p.id = pe.product_id
+             WHERE pe.user_id = $1
+             ORDER BY pe.created_at DESC
+             LIMIT 5`,
+            [userId]
+        );
+
+        // Get business KYC status
+        const kycStatusResult = await query(
+            `SELECT status, rejection_reason, verified_at, updated_at
+             FROM product_kyc_verifications
+             WHERE user_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [userId]
+        );
 
         res.json({
             success: true,
@@ -469,14 +500,20 @@ const getUserDashboard = async (req, res, next) => {
                 courses: coursesWithProgress,
                 current_video: currentVideoResult.rows[0] || null,
                 latest_videos: latestVideos,
+                orders: ordersResult.rows,
+                downloads: downloadsResult.rows.map(d => ({
+                    ...d,
+                    cover_image: normalizeImageUrl(d.cover_image)
+                })),
+                kyc_status: kycStatusResult.rows[0] || null,
                 notifications: notificationsResult.rows.map((notif) => ({
                     id: notif.id,
                     type:
                         notif.status === "pending"
                             ? "request_pending"
                             : notif.status === "approved"
-                            ? "request_approved"
-                            : "request_rejected",
+                                ? "request_approved"
+                                : "request_rejected",
                     message: `Course request "${notif.course_name}" ${notif.status}`,
                     course_name: notif.course_name,
                     course_slug: notif.course_slug,

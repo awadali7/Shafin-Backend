@@ -65,69 +65,69 @@ const createOrder = async (req, res, next) => {
             } else {
                 // Non-admin users need KYC verification
 
-            // If student, tell them to upgrade to business
-            if (userType === "student") {
-                await client.query("ROLLBACK");
-                return res.status(403).json({
-                    success: false,
-                    message:
-                        "KYC-required products can only be purchased by business owners. Please upgrade your account by adding business information.",
-                    requires_business_upgrade: true,
-                    user_type: "student",
-                });
-            }
+                // If student, tell them to upgrade to business
+                if (userType === "student") {
+                    await client.query("ROLLBACK");
+                    return res.status(403).json({
+                        success: false,
+                        message:
+                            "KYC-required products can only be purchased by business owners. Please upgrade your account by adding business information.",
+                        requires_business_upgrade: true,
+                        user_type: "student",
+                    });
+                }
 
-            // Check if user has Product KYC (Business Owner KYC)
-            const productKycCheck = await client.query(
-                `SELECT id, status FROM product_kyc_verifications WHERE user_id = $1`,
-                [req.user.id]
-            );
-
-            // If no Product KYC, they need to complete Business Owner KYC
-            if (productKycCheck.rows.length === 0) {
-                await client.query("ROLLBACK");
-                return res.status(403).json({
-                    success: false,
-                    message:
-                        "Business Owner KYC verification is required before purchasing KYC-required products. Please complete your Business Owner KYC.",
-                    requires_business_kyc: true,
-                    kyc_status: "not_completed",
-                });
-            }
-
-            const productKyc = productKycCheck.rows[0];
-            if (productKyc.status !== "verified") {
-                await client.query("ROLLBACK");
-                return res.status(403).json({
-                    success: false,
-                    message: `Your Business Owner KYC verification is ${productKyc.status}. Please complete and verify your Business Owner KYC before purchasing.`,
-                    requires_business_kyc: true,
-                    kyc_status: productKyc.status,
-                });
-            }
-
-            // Check if product terms accepted
-            const productTermsCheck = await client.query(
-                `SELECT product_terms_accepted_at FROM users WHERE id = $1`,
-                [req.user.id]
-            );
-
-            if (!productTermsCheck.rows[0]?.product_terms_accepted_at) {
-                await client.query("ROLLBACK");
-                return res.status(403).json({
-                    success: false,
-                    message:
-                        "Product terms acceptance is required before purchasing KYC-required products.",
-                    requires_product_terms: true,
-                });
-            }
-
-            // Set user type to business_owner if not set
-            if (!userType) {
-                await client.query(
-                    "UPDATE users SET user_type = 'business_owner' WHERE id = $1",
+                // Check if user has Product KYC (Business Owner KYC)
+                const productKycCheck = await client.query(
+                    `SELECT id, status FROM product_kyc_verifications WHERE user_id = $1`,
                     [req.user.id]
                 );
+
+                // If no Product KYC, they need to complete Business Owner KYC
+                if (productKycCheck.rows.length === 0) {
+                    await client.query("ROLLBACK");
+                    return res.status(403).json({
+                        success: false,
+                        message:
+                            "Business Owner KYC verification is required before purchasing KYC-required products. Please complete your Business Owner KYC.",
+                        requires_business_kyc: true,
+                        kyc_status: "not_completed",
+                    });
+                }
+
+                const productKyc = productKycCheck.rows[0];
+                if (productKyc.status !== "verified") {
+                    await client.query("ROLLBACK");
+                    return res.status(403).json({
+                        success: false,
+                        message: `Your Business Owner KYC verification is ${productKyc.status}. Please complete and verify your Business Owner KYC before purchasing.`,
+                        requires_business_kyc: true,
+                        kyc_status: productKyc.status,
+                    });
+                }
+
+                // Check if product terms accepted
+                const productTermsCheck = await client.query(
+                    `SELECT product_terms_accepted_at FROM users WHERE id = $1`,
+                    [req.user.id]
+                );
+
+                if (!productTermsCheck.rows[0]?.product_terms_accepted_at) {
+                    await client.query("ROLLBACK");
+                    return res.status(403).json({
+                        success: false,
+                        message:
+                            "Product terms acceptance is required before purchasing KYC-required products.",
+                        requires_product_terms: true,
+                    });
+                }
+
+                // Set user type to business_owner if not set
+                if (!userType) {
+                    await client.query(
+                        "UPDATE users SET user_type = 'business_owner' WHERE id = $1",
+                        [req.user.id]
+                    );
                 }
             }
         }
@@ -279,7 +279,7 @@ const createOrder = async (req, res, next) => {
     } catch (error) {
         try {
             await client.query("ROLLBACK");
-        } catch {}
+        } catch { }
         next(error);
     } finally {
         client.release();
@@ -300,11 +300,12 @@ const getMyOrders = async (req, res, next) => {
              ORDER BY created_at DESC`,
             [req.user.id]
         );
-        
+
         // For each order, fetch its items with product details
         const ordersWithItems = await Promise.all(
             ordersRes.rows.map(async (order) => {
-                const itemsRes = await query(
+                // Get product items
+                const productItemsRes = await query(
                     `SELECT
                         oi.id,
                         oi.product_id,
@@ -320,14 +321,29 @@ const getMyOrders = async (req, res, next) => {
                      ORDER BY oi.created_at ASC`,
                     [order.id]
                 );
-                
+
+                // Get course items
+                const courseItemsRes = await query(
+                    `SELECT
+                        id,
+                        course_id as product_id,
+                        1 as quantity,
+                        course_price as unit_price,
+                        'digital' as product_type,
+                        course_name as product_name,
+                        '' as product_slug
+                     FROM course_orders
+                     WHERE order_id = $1`,
+                    [order.id]
+                );
+
                 return {
                     ...order,
-                    items: itemsRes.rows
+                    items: [...productItemsRes.rows, ...courseItemsRes.rows]
                 };
             })
         );
-        
+
         res.json({ success: true, data: ordersWithItems });
     } catch (error) {
         next(error);
@@ -404,7 +420,7 @@ const adminMarkOrderPaid = async (req, res, next) => {
     } catch (error) {
         try {
             await client.query("ROLLBACK");
-        } catch {}
+        } catch { }
         next(error);
     } finally {
         client.release();
@@ -430,13 +446,20 @@ const adminGetAllOrders = async (req, res, next) => {
                 u.email as user_email,
                 u.first_name,
                 u.last_name,
-                COUNT(oi.id) FILTER (WHERE oi.product_type = 'digital') as digital_items,
-                COUNT(oi.id) FILTER (WHERE oi.product_type = 'physical') as physical_items,
-                STRING_AGG(DISTINCT p.name, ', ' ORDER BY p.name) as item_names
+                (COUNT(DISTINCT oi.id) FILTER (WHERE oi.product_type = 'digital') + COUNT(DISTINCT co.id)) as digital_items,
+                (COUNT(DISTINCT oi.id) FILTER (WHERE oi.product_type = 'physical')) as physical_items,
+                COALESCE(STRING_AGG(DISTINCT p.name, ', '), '') || 
+                CASE 
+                    WHEN COUNT(DISTINCT co.id) > 0 THEN 
+                        (CASE WHEN STRING_AGG(DISTINCT p.name, ', ') IS NOT NULL THEN ', ' ELSE '' END) || 
+                        STRING_AGG(DISTINCT co.course_name, ', ')
+                    ELSE '' 
+                END as item_names
              FROM orders o
              JOIN users u ON u.id = o.user_id
              LEFT JOIN order_items oi ON oi.order_id = o.id
              LEFT JOIN products p ON p.id = oi.product_id
+             LEFT JOIN course_orders co ON co.order_id = o.id
              GROUP BY o.id, u.id, u.email, u.first_name, u.last_name
              ORDER BY o.created_at DESC
              LIMIT 200`
@@ -473,7 +496,7 @@ const adminGetOrderById = async (req, res, next) => {
             });
         }
 
-        const itemsRes = await query(
+        const productItemsRes = await query(
             `SELECT
                 oi.id,
                 oi.product_id,
@@ -489,9 +512,26 @@ const adminGetOrderById = async (req, res, next) => {
             [id]
         );
 
+        const courseItemsRes = await query(
+            `SELECT
+                id,
+                course_id as product_id,
+                1 as quantity,
+                course_price as unit_price,
+                'digital' as product_type,
+                course_name as product_name,
+                '' as product_slug
+             FROM course_orders
+             WHERE order_id = $1`,
+            [id]
+        );
+
         res.json({
             success: true,
-            data: { order: orderRes.rows[0], items: itemsRes.rows },
+            data: {
+                order: orderRes.rows[0],
+                items: [...productItemsRes.rows, ...courseItemsRes.rows]
+            },
         });
     } catch (error) {
         next(error);
@@ -578,7 +618,7 @@ const adminUpdateTracking = async (req, res, next) => {
     } catch (error) {
         try {
             await client.query("ROLLBACK");
-        } catch {}
+        } catch { }
         next(error);
     } finally {
         client.release();
