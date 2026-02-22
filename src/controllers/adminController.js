@@ -33,7 +33,7 @@ const getDashboard = async (req, res, next) => {
         );
         const pendingRequests = parseInt(pendingRequestsResult.rows[0].total);
 
-        // Get approved requests (total, not just last 30 days)
+        // Get approved requests (total)
         const approvedRequestsResult = await query(
             `SELECT COUNT(*) as total FROM course_requests WHERE status = $1`,
             [REQUEST_STATUS.APPROVED]
@@ -61,21 +61,85 @@ const getDashboard = async (req, res, next) => {
         );
         const activeAccess = parseInt(activeAccessResult.rows[0].total);
 
-        // Get recent requests (last 10)
-        const recentRequestsResult = await query(
-            `SELECT 
-                cr.id,
-                cr.status,
-                cr.created_at,
-                c.name as course_name,
-                u.email as user_email,
+        // ─── Orders & Revenue ────────────────────────────────────────────────
+        const ordersStatsResult = await query(
+            `SELECT
+                COUNT(*) as total_orders,
+                COUNT(*) FILTER (WHERE status = 'pending')   as pending_orders,
+                COUNT(*) FILTER (WHERE status = 'paid')      as paid_orders,
+                COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled_orders,
+                COUNT(*) FILTER (WHERE status = 'refunded')  as refunded_orders,
+                COALESCE(SUM(total) FILTER (WHERE status = 'paid'), 0) as total_revenue,
+                COALESCE(SUM(total) FILTER (WHERE status = 'paid'
+                    AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)), 0) as monthly_revenue
+             FROM orders`
+        );
+        const ordersStats = ordersStatsResult.rows[0];
+
+        // ─── Products ────────────────────────────────────────────────────────
+        const productsStatsResult = await query(
+            `SELECT
+                COUNT(*) as total_products,
+                COUNT(*) FILTER (WHERE product_type = 'physical') as physical_products,
+                COUNT(*) FILTER (WHERE product_type = 'digital')  as digital_products,
+                COUNT(*) FILTER (WHERE product_type = 'physical' AND stock_quantity IS NOT NULL AND stock_quantity < 5) as low_stock_products
+             FROM products
+             WHERE is_active = true`
+        );
+        const productsStats = productsStatsResult.rows[0];
+
+        // ─── Course KYC ──────────────────────────────────────────────────────
+        const kycStatsResult = await query(
+            `SELECT
+                COUNT(*) FILTER (WHERE status = 'pending')  as kyc_pending,
+                COUNT(*) FILTER (WHERE status = 'verified') as kyc_verified,
+                COUNT(*) FILTER (WHERE status = 'rejected') as kyc_rejected
+             FROM kyc_verifications`
+        );
+        const kycStats = kycStatsResult.rows[0];
+
+        // ─── Product KYC ─────────────────────────────────────────────────────
+        let productKycPending = 0;
+        try {
+            const productKycResult = await query(
+                `SELECT COUNT(*) as total FROM product_kyc_verifications WHERE status = 'pending'`
+            );
+            productKycPending = parseInt(productKycResult.rows[0].total);
+        } catch (e) {
+            // table may not exist in all environments
+        }
+
+        // ─── Blogs ───────────────────────────────────────────────────────────
+        const blogStatsResult = await query(
+            `SELECT
+                COUNT(*) as total_blogs,
+                COUNT(*) FILTER (WHERE is_published = true) as published_blogs
+             FROM blog_posts`
+        );
+        const blogStats = blogStatsResult.rows[0];
+
+        // ─── Recent Orders (last 5) ──────────────────────────────────────────
+        const recentOrdersResult = await query(
+            `SELECT
+                o.id,
+                o.status,
+                o.total,
+                o.created_at,
                 u.first_name,
-                u.last_name
-             FROM course_requests cr
-             JOIN courses c ON cr.course_id = c.id
-             JOIN users u ON cr.user_id = u.id
-             ORDER BY cr.created_at DESC
-             LIMIT 10`
+                u.last_name,
+                u.email as user_email
+             FROM orders o
+             JOIN users u ON u.id = o.user_id
+             ORDER BY o.created_at DESC
+             LIMIT 5`
+        );
+
+        // ─── Recent Users (last 5) ───────────────────────────────────────────
+        const recentUsersResult = await query(
+            `SELECT id, email, first_name, last_name, created_at, role
+             FROM users
+             ORDER BY created_at DESC
+             LIMIT 5`
         );
 
         // Get admin user performance (current admin's activity)
@@ -135,7 +199,24 @@ const getDashboard = async (req, res, next) => {
              LIMIT 10`
         );
 
-        // Get performance notifications (pending requests, expiring access, etc.)
+        // ─── Recent Requests (for notifications) ─────────────────────────────
+        const recentRequestsResult = await query(
+            `SELECT 
+                cr.id,
+                cr.status,
+                cr.created_at,
+                c.name as course_name,
+                u.email as user_email,
+                u.first_name,
+                u.last_name
+             FROM course_requests cr
+             JOIN courses c ON cr.course_id = c.id
+             JOIN users u ON cr.user_id = u.id
+             ORDER BY cr.created_at DESC
+             LIMIT 10`
+        );
+
+        // Get expiring access (within 7 days)
         const expiringAccessResult = await query(
             `SELECT 
                 ca.id,
@@ -188,14 +269,46 @@ const getDashboard = async (req, res, next) => {
         res.json({
             success: true,
             data: {
-                // Flat structure for frontend DashboardStats interface
+                // ── Core counts (existing flat structure kept for backward compat) ──
                 total_users: totalUsers,
                 total_courses: totalCourses,
                 total_requests: totalRequests,
                 pending_requests: pendingRequests,
                 approved_requests: approvedRequests,
                 rejected_requests: rejectedRequests,
-                // Additional data (kept for backward compatibility if needed)
+                total_videos: totalVideos,
+                active_access: activeAccess,
+
+                // ── Orders & Revenue ──────────────────────────────────────────
+                total_orders: parseInt(ordersStats.total_orders) || 0,
+                pending_orders: parseInt(ordersStats.pending_orders) || 0,
+                paid_orders: parseInt(ordersStats.paid_orders) || 0,
+                cancelled_orders: parseInt(ordersStats.cancelled_orders) || 0,
+                refunded_orders: parseInt(ordersStats.refunded_orders) || 0,
+                total_revenue: parseFloat(ordersStats.total_revenue) || 0,
+                monthly_revenue: parseFloat(ordersStats.monthly_revenue) || 0,
+
+                // ── Products ──────────────────────────────────────────────────
+                total_products: parseInt(productsStats.total_products) || 0,
+                physical_products: parseInt(productsStats.physical_products) || 0,
+                digital_products: parseInt(productsStats.digital_products) || 0,
+                low_stock_products: parseInt(productsStats.low_stock_products) || 0,
+
+                // ── KYC ───────────────────────────────────────────────────────
+                kyc_pending: parseInt(kycStats.kyc_pending) || 0,
+                kyc_verified: parseInt(kycStats.kyc_verified) || 0,
+                kyc_rejected: parseInt(kycStats.kyc_rejected) || 0,
+                product_kyc_pending: productKycPending,
+
+                // ── Blogs ─────────────────────────────────────────────────────
+                total_blogs: parseInt(blogStats.total_blogs) || 0,
+                published_blogs: parseInt(blogStats.published_blogs) || 0,
+
+                // ── Recent Activity ───────────────────────────────────────────
+                recent_orders: recentOrdersResult.rows,
+                recent_users: recentUsersResult.rows,
+
+                // ── Kept for backward compat ──────────────────────────────────
                 business_overview: {
                     statistics: {
                         total_users: totalUsers,
@@ -203,8 +316,6 @@ const getDashboard = async (req, res, next) => {
                         total_videos: totalVideos,
                         pending_requests: pendingRequests,
                         approved_requests: approvedRequests,
-                        rejected_requests: rejectedRequests,
-                        total_requests: totalRequests,
                         active_access: activeAccess,
                     },
                     recent_requests: recentRequestsResult.rows,
@@ -239,18 +350,29 @@ const getAllUsers = async (req, res, next) => {
 
         let queryText = `
             SELECT 
-                id,
-                email,
-                first_name,
-                last_name,
-                role,
-                email_verified,
-                is_active,
-                last_login_at,
-                last_login_ip,
-                last_login_device,
-                created_at
-             FROM users
+                u.id,
+                u.email,
+                u.first_name,
+                u.last_name,
+                u.role,
+                u.user_type,
+                u.email_verified,
+                u.is_active,
+                u.last_login_at,
+                u.last_login_ip,
+                u.last_login_device,
+                u.created_at,
+                u.course_terms_accepted_at,
+                u.product_terms_accepted_at,
+                -- Course KYC (kyc_verifications)
+                ck.status                  AS course_kyc_status,
+                ck.upgraded_to_business    AS course_kyc_is_business,
+                ck.business_upgraded_at    AS course_kyc_business_upgraded_at,
+                -- Product KYC (product_kyc_verifications)
+                pk.status                  AS product_kyc_status
+             FROM users u
+             LEFT JOIN kyc_verifications ck         ON ck.user_id = u.id
+             LEFT JOIN product_kyc_verifications pk  ON pk.user_id = u.id
              WHERE 1=1
         `;
 
@@ -258,15 +380,15 @@ const getAllUsers = async (req, res, next) => {
         let paramCount = 1;
 
         if (role) {
-            queryText += ` AND role = $${paramCount++}`;
+            queryText += ` AND u.role = $${paramCount++}`;
             params.push(role);
         }
 
         if (search) {
             queryText += ` AND (
-                email ILIKE $${paramCount} OR
-                first_name ILIKE $${paramCount} OR
-                last_name ILIKE $${paramCount}
+                u.email ILIKE $${paramCount} OR
+                u.first_name ILIKE $${paramCount} OR
+                u.last_name ILIKE $${paramCount}
             )`;
             params.push(`%${search}%`);
             paramCount++;
@@ -283,7 +405,7 @@ const getAllUsers = async (req, res, next) => {
         const total = parseInt(countResult.rows[0].total);
 
         // Get paginated results
-        queryText += ` ORDER BY created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
+        queryText += ` ORDER BY u.created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
         params.push(parseInt(limit), offset);
 
         const result = await query(queryText, params);
