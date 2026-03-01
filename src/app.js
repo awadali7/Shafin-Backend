@@ -25,7 +25,7 @@ const productKycRoutes = require("./routes/product-kyc");
 const termsRoutes = require("./routes/terms");
 const fixUserTypesRoutes = require("./routes/fix-user-types");
 const settingsRoutes = require("./routes/settings");
-
+const galleryRoutes = require("./routes/galleryRoutes");
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
 
@@ -194,7 +194,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/terms", termsRoutes);
 app.use("/api/fix-user-types", fixUserTypesRoutes);
 app.use("/api/settings", settingsRoutes);
-
+app.use("/api/gallery", galleryRoutes);
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({

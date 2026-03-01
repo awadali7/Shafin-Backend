@@ -67,10 +67,11 @@ const getDashboard = async (req, res, next) => {
                 COUNT(*) as total_orders,
                 COUNT(*) FILTER (WHERE status = 'pending')   as pending_orders,
                 COUNT(*) FILTER (WHERE status = 'paid')      as paid_orders,
+                COUNT(*) FILTER (WHERE status = 'shipped' OR status = 'dispatched') as shipped_orders,
                 COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled_orders,
                 COUNT(*) FILTER (WHERE status = 'refunded')  as refunded_orders,
-                COALESCE(SUM(total) FILTER (WHERE status = 'paid'), 0) as total_revenue,
-                COALESCE(SUM(total) FILTER (WHERE status = 'paid'
+                COALESCE(SUM(total) FILTER (WHERE status IN ('paid', 'shipped', 'dispatched')), 0) as total_revenue,
+                COALESCE(SUM(total) FILTER (WHERE status IN ('paid', 'shipped', 'dispatched')
                     AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)), 0) as monthly_revenue
              FROM orders`
         );
@@ -238,10 +239,10 @@ const getDashboard = async (req, res, next) => {
         const adminCompletionPercentage =
             adminPerf.total_available_videos > 0
                 ? Math.round(
-                      (parseInt(adminPerf.videos_watched) /
-                          parseInt(adminPerf.total_available_videos)) *
-                          100
-                  )
+                    (parseInt(adminPerf.videos_watched) /
+                        parseInt(adminPerf.total_available_videos)) *
+                    100
+                )
                 : 0;
 
         // Build notifications
@@ -283,6 +284,7 @@ const getDashboard = async (req, res, next) => {
                 total_orders: parseInt(ordersStats.total_orders) || 0,
                 pending_orders: parseInt(ordersStats.pending_orders) || 0,
                 paid_orders: parseInt(ordersStats.paid_orders) || 0,
+                shipped_orders: parseInt(ordersStats.shipped_orders) || 0,
                 cancelled_orders: parseInt(ordersStats.cancelled_orders) || 0,
                 refunded_orders: parseInt(ordersStats.refunded_orders) || 0,
                 total_revenue: parseFloat(ordersStats.total_revenue) || 0,

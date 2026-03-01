@@ -352,7 +352,7 @@ CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','cancelled','refunded')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'shipped', 'dispatched', 'delivered', 'cancelled', 'refunded')),
     payment_provider VARCHAR(50),
     payment_reference VARCHAR(255),
     subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,

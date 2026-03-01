@@ -33,9 +33,8 @@ const getAllBlogPosts = async (req, res, next) => {
             queryParams.push(`%${search}%`);
         }
 
-        queryText += ` ORDER BY bp.published_at DESC LIMIT $${
-            queryParams.length + 1
-        } OFFSET $${queryParams.length + 2}`;
+        queryText += ` ORDER BY bp.published_at DESC LIMIT $${queryParams.length + 1
+            } OFFSET $${queryParams.length + 2}`;
         queryParams.push(limitNum, offsetNum);
 
         const result = await query(queryText, queryParams);
@@ -95,6 +94,7 @@ const getAllBlogPostsAdmin = async (req, res, next) => {
                 bp.slug,
                 bp.content,
                 bp.cover_image,
+                bp.pdfs,
                 bp.is_published,
                 bp.views,
                 bp.published_at,
@@ -120,9 +120,8 @@ const getAllBlogPostsAdmin = async (req, res, next) => {
             queryText += ` AND bp.is_published = false`;
         }
 
-        queryText += ` ORDER BY bp.created_at DESC LIMIT $${
-            queryParams.length + 1
-        } OFFSET $${queryParams.length + 2}`;
+        queryText += ` ORDER BY bp.created_at DESC LIMIT $${queryParams.length + 1
+            } OFFSET $${queryParams.length + 2}`;
         queryParams.push(limitNum, offsetNum);
 
         const result = await query(queryText, queryParams);
@@ -186,6 +185,7 @@ const getBlogPostBySlug = async (req, res, next) => {
                 bp.slug,
                 bp.content,
                 bp.cover_image,
+                bp.pdfs,
                 bp.views,
                 bp.published_at,
                 bp.created_at,
@@ -241,6 +241,7 @@ const getBlogPostById = async (req, res, next) => {
                 bp.slug,
                 bp.content,
                 bp.cover_image,
+                bp.pdfs,
                 bp.is_published,
                 bp.views,
                 bp.published_at,
@@ -283,7 +284,7 @@ const getBlogPostById = async (req, res, next) => {
  */
 const createBlogPost = async (req, res, next) => {
     try {
-        const { title, content, cover_image, is_published } = req.body;
+        const { title, content, cover_image, is_published, pdfs } = req.body;
         const authorId = req.user.id;
 
         if (!title || !content) {
@@ -313,8 +314,8 @@ const createBlogPost = async (req, res, next) => {
         const publishedAt = is_published ? new Date() : null;
 
         const result = await query(
-            `INSERT INTO blog_posts (title, slug, content, cover_image, author_id, is_published, published_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `INSERT INTO blog_posts (title, slug, content, cover_image, author_id, is_published, published_at, pdfs)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
             [
                 title,
@@ -324,6 +325,7 @@ const createBlogPost = async (req, res, next) => {
                 authorId,
                 is_published || false,
                 publishedAt,
+                JSON.stringify(pdfs || []),
             ]
         );
 
@@ -344,7 +346,7 @@ const createBlogPost = async (req, res, next) => {
 const updateBlogPost = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { title, content, cover_image, is_published } = req.body;
+        const { title, content, cover_image, is_published, pdfs } = req.body;
 
         // Content is stored as-is to support HTML, images, iframes, videos, etc.
 
@@ -402,6 +404,10 @@ const updateBlogPost = async (req, res, next) => {
         if (is_published !== undefined) {
             updateFields.push(`is_published = $${paramIndex++}`);
             updateValues.push(is_published);
+        }
+        if (pdfs !== undefined) {
+            updateFields.push(`pdfs = $${paramIndex++}`);
+            updateValues.push(JSON.stringify(pdfs || []));
         }
         if (slug !== currentPost.slug) {
             updateFields.push(`slug = $${paramIndex++}`);

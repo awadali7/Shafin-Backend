@@ -575,7 +575,7 @@ const adminUpdateTracking = async (req, res, next) => {
     const client = await getClient();
     try {
         const { id } = req.params;
-        const { tracking_number, tracking_url, estimated_delivery_date, shipped_at } = req.body || {};
+        const { status, tracking_number, tracking_url, estimated_delivery_date, shipped_at, delivered_at } = req.body || {};
 
         await client.query("BEGIN");
 
@@ -596,6 +596,12 @@ const adminUpdateTracking = async (req, res, next) => {
         const updates = [];
         const values = [id];
         let paramCount = 2;
+
+        if (status !== undefined) {
+            updates.push(`status = $${paramCount}`);
+            values.push(status || null);
+            paramCount++;
+        }
 
         if (tracking_number !== undefined) {
             updates.push(`tracking_number = $${paramCount}`);
@@ -618,6 +624,12 @@ const adminUpdateTracking = async (req, res, next) => {
         if (shipped_at !== undefined) {
             updates.push(`shipped_at = $${paramCount}`);
             values.push(shipped_at || null);
+            paramCount++;
+        }
+
+        if (delivered_at !== undefined) {
+            updates.push(`delivered_at = $${paramCount}`);
+            values.push(delivered_at || null);
             paramCount++;
         }
 
