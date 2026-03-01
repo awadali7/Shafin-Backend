@@ -49,8 +49,7 @@ const createOrder = async (req, res, next) => {
         const hasKycProduct = productsRes.rows.some((p) => p.requires_kyc);
 
         if (hasKycProduct) {
-            // KYC-required products need business owner status
-            // Check user role and type
+            // Admins bypass KYC requirements
             const userCheck = await client.query(
                 `SELECT role, user_type FROM users WHERE id = $1`,
                 [req.user.id]
@@ -59,51 +58,66 @@ const createOrder = async (req, res, next) => {
             const userRole = userCheck.rows[0]?.role;
             const userType = userCheck.rows[0]?.user_type;
 
-            // Admins bypass KYC requirements
-            if (userRole === 'admin') {
-                // Admin can purchase without KYC - skip to next validation
-            } else {
-                // Non-admin users need KYC verification
+            if (userRole !== "admin") {
+                // Calculate total quantity of KYC products
+                const kycQuantity = items
+                    .filter((item) => byId.get(item.product_id)?.requires_kyc)
+                    .reduce(
+                        (sum, item) =>
+                            sum + (parseInt(item.quantity) || 1),
+                        0
+                    );
 
-                // If student, tell them to upgrade to business
-                if (userType === "student") {
-                    await client.query("ROLLBACK");
-                    return res.status(403).json({
-                        success: false,
-                        message:
-                            "KYC-required products can only be purchased by business owners. Please upgrade your account by adding business information.",
-                        requires_business_upgrade: true,
-                        user_type: "student",
-                    });
-                }
-
-                // Check if user has Product KYC (Business Owner KYC)
+                // 1. Check if user has Verified Business (Product) KYC
                 const productKycCheck = await client.query(
-                    `SELECT id, status FROM product_kyc_verifications WHERE user_id = $1`,
+                    `SELECT status FROM product_kyc_verifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
                     [req.user.id]
                 );
 
-                // If no Product KYC, they need to complete Business Owner KYC
-                if (productKycCheck.rows.length === 0) {
-                    await client.query("ROLLBACK");
-                    return res.status(403).json({
-                        success: false,
-                        message:
-                            "Business Owner KYC verification is required before purchasing KYC-required products. Please complete your Business Owner KYC.",
-                        requires_business_kyc: true,
-                        kyc_status: "not_completed",
-                    });
-                }
+                const isBusinessVerified =
+                    productKycCheck.rows[0]?.status === "verified";
 
-                const productKyc = productKycCheck.rows[0];
-                if (productKyc.status !== "verified") {
-                    await client.query("ROLLBACK");
-                    return res.status(403).json({
-                        success: false,
-                        message: `Your Business Owner KYC verification is ${productKyc.status}. Please complete and verify your Business Owner KYC before purchasing.`,
-                        requires_business_kyc: true,
-                        kyc_status: productKyc.status,
-                    });
+                if (isBusinessVerified) {
+                    // Business owner verified - Allow bulk purchase
+                    // Ensure user_type is updated if not already
+                    if (userType !== "business_owner") {
+                        await client.query(
+                            "UPDATE users SET user_type = 'business_owner' WHERE id = $1",
+                            [req.user.id]
+                        );
+                    }
+                } else {
+                    // Not business verified - Check for Student KYC (Single quantity only)
+                    const studentKycCheck = await client.query(
+                        `SELECT status FROM kyc_verifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+                        [req.user.id]
+                    );
+
+                    const isStudentVerified =
+                        studentKycCheck.rows[0]?.status === "verified";
+
+                    if (!isStudentVerified) {
+                        // Neither Business nor Student KYC verified
+                        await client.query("ROLLBACK");
+                        return res.status(403).json({
+                            success: false,
+                            message:
+                                "KYC verification is required to purchase this product. Please complete your Student KYC or Business KYC.",
+                            requires_business_kyc: true,
+                        });
+                    }
+
+                    // Student is verified - Check quantity
+                    if (kycQuantity > 1) {
+                        await client.query("ROLLBACK");
+                        return res.status(403).json({
+                            success: false,
+                            message:
+                                "Students can only purchase a single quantity of KYC-required products. Please upgrade to a Business account for bulk orders.",
+                            single_quantity_required: true,
+                            requires_business_upgrade: true,
+                        });
+                    }
                 }
 
                 // Check if product terms accepted
@@ -118,16 +132,8 @@ const createOrder = async (req, res, next) => {
                         success: false,
                         message:
                             "Product terms acceptance is required before purchasing KYC-required products.",
-                        requires_product_terms: true,
+                        requires_product_terms_acceptance: true,
                     });
-                }
-
-                // Set user type to business_owner if not set
-                if (!userType) {
-                    await client.query(
-                        "UPDATE users SET user_type = 'business_owner' WHERE id = $1",
-                        [req.user.id]
-                    );
                 }
             }
         }
@@ -224,7 +230,7 @@ const createOrder = async (req, res, next) => {
              ) VALUES (
                 $1,'pending',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
              )
-             RETURNING id, status, subtotal, discount, shipping_cost, total, created_at`,
+             RETURNING id, order_number, status, subtotal, discount, shipping_cost, total, created_at`,
             [
                 req.user.id,
                 subtotal,
@@ -292,7 +298,7 @@ const createOrder = async (req, res, next) => {
 const getMyOrders = async (req, res, next) => {
     try {
         const ordersRes = await query(
-            `SELECT id, status, subtotal, shipping_cost, total, 
+            `SELECT id, order_number, status, subtotal, shipping_cost, total, 
                     tracking_number, tracking_url, estimated_delivery_date, 
                     shipped_at, delivered_at, created_at, updated_at
              FROM orders
@@ -435,6 +441,7 @@ const adminGetAllOrders = async (req, res, next) => {
         const result = await query(
             `SELECT
                 o.id,
+                o.order_number,
                 o.status,
                 o.total,
                 o.subtotal,
@@ -478,7 +485,30 @@ const adminGetOrderById = async (req, res, next) => {
         const { id } = req.params;
         const orderRes = await query(
             `SELECT
-                o.*,
+                o.id,
+                o.order_number,
+                o.status,
+                o.payment_provider,
+                o.payment_reference,
+                o.subtotal,
+                o.discount,
+                o.shipping_cost,
+                o.total,
+                o.first_name,
+                o.last_name,
+                o.email,
+                o.phone,
+                o.address,
+                o.city,
+                o.state,
+                o.pincode,
+                o.tracking_number,
+                o.tracking_url,
+                o.estimated_delivery_date,
+                o.shipped_at,
+                o.delivered_at,
+                o.created_at,
+                o.updated_at,
                 u.email as user_email,
                 u.first_name as user_first_name,
                 u.last_name as user_last_name

@@ -405,9 +405,18 @@ const verifyProductKYC = async (req, res, next) => {
             ]
         );
 
+        const userId = existingKYC.rows[0].user_id;
+
+        // If verified, update user type to business_owner
+        if (status === "verified") {
+            await query(
+                "UPDATE users SET user_type = 'business_owner' WHERE id = $1",
+                [userId]
+            );
+        }
+
         // Create notification for user
         const { createNotification } = require("./notificationController");
-        const userId = existingKYC.rows[0].user_id;
 
         if (status === "verified") {
             await createNotification(
