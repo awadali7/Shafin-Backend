@@ -321,6 +321,7 @@ const getProductBySlug = async (req, res, next) => {
                 tiered_pricing,
                 requires_kyc,
                 product_detail_pdf,
+                weight,
                 created_at,
                 updated_at
              FROM products
@@ -397,6 +398,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 tiered_pricing,
                 requires_kyc,
                 product_detail_pdf,
+                weight,
                 created_at,
                 updated_at
              FROM products
@@ -457,6 +459,7 @@ const adminCreateProduct = async (req, res, next) => {
             videos,
             quantity_discounts,
             requires_kyc,
+            weight,
         } = req.body || {};
 
         const type = (product_type || req.body?.type || "").toString().trim();
@@ -659,9 +662,10 @@ const adminCreateProduct = async (req, res, next) => {
                 requires_kyc,
                 created_by,
                 tiered_pricing,
-                product_detail_pdf
+                product_detail_pdf,
+                weight
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
             )
             RETURNING
                 id,
@@ -688,6 +692,7 @@ const adminCreateProduct = async (req, res, next) => {
                 is_contact_only,
                 tiered_pricing,
                 requires_kyc,
+                weight,
                 created_at,
                 updated_at`,
             [
@@ -723,7 +728,8 @@ const adminCreateProduct = async (req, res, next) => {
                         return typeof pricing === 'string' ? pricing : JSON.stringify(pricing);
                     } catch (e) { return null; }
                 })(),
-                productDetailPdfUrl
+                productDetailPdfUrl,
+                toNumber(weight, 1000)
             ]
         );
 
@@ -797,6 +803,7 @@ const adminUpdateProduct = async (req, res, next) => {
             is_coming_soon,
             is_contact_only,
             requires_kyc,
+            weight,
             images,
             videos,
             tiered_pricing,

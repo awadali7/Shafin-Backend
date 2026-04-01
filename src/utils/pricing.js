@@ -1,16 +1,19 @@
 /**
- * Calculate price based on tiered pricing (quantity ranges)
+ * Calculate price based on tiered pricing (quantity ranges) and shipping zone
  * @param {number} basePrice - Original price per item (fallback)
  * @param {number} quantity - Number of items
- * @param {Array} quantityPricing - Array like [{"min_qty": 1, "max_qty": 1, "price_per_item": 100, "courier_charge": 70}, ...]
+ * @param {Array} quantityPricing - Array like [{"min_qty": 1, "max_qty": 1, "price_per_item": 100, "courier_charge_local": 40, ...}, ...]
+ * @param {string} zone - Shipping zone: 'local', 'regional', or 'national'
  * @returns {Object} { totalPrice, pricePerItem, courierCharge, itemsTotal, savings, appliedPricing }
  */
-function calculateQuantityPrice(basePrice, quantity, quantityPricing = []) {
+function calculateQuantityPrice(basePrice, quantity, quantityPricing = [], zone = 'national') {
     if (!Array.isArray(quantityPricing) || quantityPricing.length === 0) {
         const totalPrice = basePrice * quantity;
         return {
             totalPrice,
             pricePerItem: basePrice,
+            courierCharge: 0,
+            itemsTotal: totalPrice,
             savings: 0,
             appliedPricing: null,
             isPricing: false,
@@ -18,8 +21,6 @@ function calculateQuantityPrice(basePrice, quantity, quantityPricing = []) {
     }
 
     // Find the tier that matches this quantity
-    // Tier format: { min_qty: 2, max_qty: 5, price_per_item: 90, courier_charge: 70 }
-    // max_qty can be null for unlimited
     const matchingTier = quantityPricing.find((tier) => {
         const minQty = Number(tier.min_qty || 1);
         const maxQty = tier.max_qty ? Number(tier.max_qty) : Infinity;
@@ -32,6 +33,8 @@ function calculateQuantityPrice(basePrice, quantity, quantityPricing = []) {
         return {
             totalPrice,
             pricePerItem: basePrice,
+            courierCharge: 0,
+            itemsTotal: totalPrice,
             savings: 0,
             appliedPricing: null,
             isPricing: false,
@@ -40,9 +43,11 @@ function calculateQuantityPrice(basePrice, quantity, quantityPricing = []) {
 
     // Apply tiered pricing
     const pricePerItem = Number(matchingTier.price_per_item);
-    const courierCharge = Number(matchingTier.courier_charge || 0);
+    // Courier charge is no longer calculated at the item level (global weight-based logic applies at order level)
+    const courierCharge = 0;
+
     const itemsTotal = pricePerItem * quantity;
-    const totalPrice = itemsTotal + courierCharge;
+    const totalPrice = itemsTotal;
     const regularTotalPrice = basePrice * quantity;
     const savings = regularTotalPrice - totalPrice;
 

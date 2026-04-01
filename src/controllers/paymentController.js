@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { getClient } = require("../config/database");
 const { getRazorpayClient } = require("../config/razorpay");
 const { createNotification } = require("./notificationController");
+const { sendProductExtraInfoEmail } = require("../config/email");
 
 function toPaise(amountInRupees) {
     const n = Number(amountInRupees);
@@ -30,9 +31,10 @@ async function grantDigitalEntitlementsForOrder(
     grantedBy
 ) {
     const itemsRes = await client.query(
-        `SELECT product_id, product_type
-         FROM order_items
-         WHERE order_id = $1`,
+        `SELECT oi.product_id, oi.product_type, p.product_extra_info_id, p.name 
+         FROM order_items oi
+         JOIN products p ON p.id = oi.product_id
+         WHERE oi.order_id = $1`,
         [orderId]
     );
 
@@ -47,6 +49,27 @@ async function grantDigitalEntitlementsForOrder(
              ON CONFLICT (user_id, product_id) DO NOTHING`,
             [userId, productId, orderId, grantedBy, "Granted by paid order"]
         );
+    }
+
+    // Dispatch Product Extra Info emails if any
+    try {
+        const userRes = await client.query(`SELECT email, first_name FROM users WHERE id = $1`, [userId]);
+        const user = userRes.rows[0];
+        const backendUrl = process.env.BACKEND_URL || "http://localhost:5000";
+
+        for (const item of itemsRes.rows) {
+            if (item.product_extra_info_id) {
+                const zipDownloadUrl = `${backendUrl}/api/product-extra-info/download/${item.product_extra_info_id}`;
+                await sendProductExtraInfoEmail(
+                    user.email,
+                    user.first_name,
+                    item.name,
+                    zipDownloadUrl
+                );
+            }
+        }
+    } catch (e) {
+        console.error("Failed to send Product Extra Info emails:", e);
     }
 }
 

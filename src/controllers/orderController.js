@@ -171,8 +171,26 @@ const createOrder = async (req, res, next) => {
             return p?.product_type === "physical";
         });
 
-        // Calculate subtotal with quantity pricing
-        let subtotal = 0;
+        // Fetch shipping origin and courier settings
+        const settingsRes = await client.query(
+            "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('shipping_origin_city', 'shipping_origin_state', 'local_base_weight', 'local_base_rate', 'local_additional_weight', 'local_additional_rate', 'regional_base_weight', 'regional_base_rate', 'regional_additional_weight', 'regional_additional_rate', 'national_base_weight', 'national_base_rate', 'national_additional_weight', 'national_additional_rate')"
+        );
+        const settings = {};
+        settingsRes.rows.forEach((r) => (settings[r.setting_key] = r.setting_value));
+        const originCity = settings.shipping_origin_city || "Ernakulam";
+        const originState = settings.shipping_origin_state || "Kerala";
+
+        // Determine Shipping Zone
+        let zone = "national";
+        if (customer?.city?.trim().toLowerCase() === originCity.trim().toLowerCase()) {
+            zone = "local";
+        } else if (customer?.state?.trim().toLowerCase() === originState.trim().toLowerCase()) {
+            zone = "regional";
+        }
+
+        // Calculate totals with quantity pricing and zone-based shipping
+        let itemsSubtotal = 0;
+        let totalWeight = 0;
         let totalDiscount = 0;
         const itemsWithPricing = [];
 
@@ -180,36 +198,74 @@ const createOrder = async (req, res, next) => {
             const p = byId.get(item.product_id);
             const basePrice = Number(p.price);
             const quantity = Number(item.quantity || 1);
+            const weight = Number(p.weight || 1000); // Default to 1kg if not set
 
-            // Calculate price for this quantity
+            if (p.product_type === 'physical') {
+                totalWeight += weight * quantity;
+            }
+
+            // Calculate pricing for this quantity and zone
             const pricingInfo = calculateQuantityPrice(
                 basePrice,
                 quantity,
-                p.tiered_pricing || []
+                p.tiered_pricing || [],
+                zone
             );
 
-            const itemTotal = pricingInfo.totalPrice;
-            const regularTotal = basePrice * quantity;
+            const itemItemsTotal = pricingInfo.itemsTotal; // Total for items only
             const itemSavings = pricingInfo.savings;
 
-            subtotal += itemTotal;
+            itemsSubtotal += itemItemsTotal;
             totalDiscount += itemSavings;
 
             itemsWithPricing.push({
                 ...item,
                 basePrice,
-                totalPrice: itemTotal,
+                totalPrice: pricingInfo.totalPrice, // Items + Shipping for this item
                 pricePerItem: pricingInfo.pricePerItem,
+                courierCharge: 0, // No longer tracked per item
                 savings: itemSavings,
                 isPricing: pricingInfo.isPricing,
                 appliedPricing: pricingInfo.appliedPricing,
             });
         }
 
-        subtotal = toMoney(subtotal);
+        let totalShippingCost = 0;
+        
+        if (hasPhysical && totalWeight > 0) {
+            let baseWeight, baseRate, addWeight, addRate;
+            
+            if (zone === 'local') {
+                baseWeight = Number(settings.local_base_weight || 1000);
+                baseRate = Number(settings.local_base_rate || 50);
+                addWeight = Number(settings.local_additional_weight || 1000);
+                addRate = Number(settings.local_additional_rate || 40);
+            } else if (zone === 'regional') {
+                baseWeight = Number(settings.regional_base_weight || 1000);
+                baseRate = Number(settings.regional_base_rate || 70);
+                addWeight = Number(settings.regional_additional_weight || 1000);
+                addRate = Number(settings.regional_additional_rate || 60);
+            } else {
+                baseWeight = Number(settings.national_base_weight || 1000);
+                baseRate = Number(settings.national_base_rate || 100);
+                addWeight = Number(settings.national_additional_weight || 1000);
+                addRate = Number(settings.national_additional_rate || 90);
+            }
+
+            if (totalWeight <= baseWeight) {
+                totalShippingCost = baseRate;
+            } else {
+                const extraWeight = totalWeight - baseWeight;
+                const extraSlabs = Math.ceil(extraWeight / addWeight);
+                totalShippingCost = baseRate + (extraSlabs * addRate);
+            }
+        }
+
+        const subtotal = toMoney(itemsSubtotal);
+        const shippingCost = toMoney(totalShippingCost);
         totalDiscount = toMoney(totalDiscount);
-        const shippingCost = 0; // No shipping charges
-        const total = toMoney(subtotal);
+        const total = toMoney(subtotal + shippingCost);
+
 
         const orderRes = await client.query(
             `INSERT INTO orders (
@@ -300,7 +356,8 @@ const getMyOrders = async (req, res, next) => {
         const ordersRes = await query(
             `SELECT id, order_number, status, subtotal, shipping_cost, total, 
                     tracking_number, tracking_url, estimated_delivery_date, 
-                    shipped_at, delivered_at, created_at, updated_at
+                    shipped_at, delivered_at, origin_city, destination_city,
+                    courier_service_type, tracking_history, created_at, updated_at
              FROM orders
              WHERE user_id = $1
              ORDER BY created_at DESC`,
@@ -507,6 +564,10 @@ const adminGetOrderById = async (req, res, next) => {
                 o.estimated_delivery_date,
                 o.shipped_at,
                 o.delivered_at,
+                o.origin_city,
+                o.destination_city,
+                o.courier_service_type,
+                o.tracking_history,
                 o.created_at,
                 o.updated_at,
                 u.email as user_email,
@@ -575,15 +636,20 @@ const adminUpdateTracking = async (req, res, next) => {
     const client = await getClient();
     try {
         const { id } = req.params;
-        const { status, tracking_number, tracking_url, estimated_delivery_date, shipped_at, delivered_at } = req.body || {};
+        const { 
+            status, 
+            tracking_number, 
+            tracking_url, 
+            estimated_delivery_date, 
+            shipped_at, 
+            delivered_at,
+            origin_city,
+            destination_city,
+            courier_service_type,
+            tracking_history
+        } = req.body || {};
 
-        await client.query("BEGIN");
-
-        const orderRes = await client.query(
-            `SELECT id, status FROM orders WHERE id = $1`,
-            [id]
-        );
-
+        const orderRes = await client.query("SELECT status FROM orders WHERE id = $1", [id]);
         if (orderRes.rows.length === 0) {
             await client.query("ROLLBACK");
             return res.status(404).json({
@@ -592,14 +658,24 @@ const adminUpdateTracking = async (req, res, next) => {
             });
         }
 
+        const currentStatus = orderRes.rows[0].status;
+        let targetStatus = status !== undefined ? status : currentStatus;
+
+        // Status Automation
+        if (delivered_at) {
+            targetStatus = "delivered";
+        } else if (shipped_at && (targetStatus === "paid" || targetStatus === "processing")) {
+            targetStatus = "shipped";
+        }
+
         // Build dynamic update query
         const updates = [];
         const values = [id];
         let paramCount = 2;
 
-        if (status !== undefined) {
+        if (targetStatus !== currentStatus || status !== undefined) {
             updates.push(`status = $${paramCount}`);
-            values.push(status || null);
+            values.push(targetStatus);
             paramCount++;
         }
 
@@ -630,6 +706,30 @@ const adminUpdateTracking = async (req, res, next) => {
         if (delivered_at !== undefined) {
             updates.push(`delivered_at = $${paramCount}`);
             values.push(delivered_at || null);
+            paramCount++;
+        }
+
+        if (origin_city !== undefined) {
+            updates.push(`origin_city = $${paramCount}`);
+            values.push(origin_city || null);
+            paramCount++;
+        }
+
+        if (destination_city !== undefined) {
+            updates.push(`destination_city = $${paramCount}`);
+            values.push(destination_city || null);
+            paramCount++;
+        }
+
+        if (courier_service_type !== undefined) {
+            updates.push(`courier_service_type = $${paramCount}`);
+            values.push(courier_service_type || null);
+            paramCount++;
+        }
+
+        if (tracking_history !== undefined) {
+            updates.push(`tracking_history = $${paramCount}`);
+            values.push(Array.isArray(tracking_history) ? JSON.stringify(tracking_history) : null);
             paramCount++;
         }
 

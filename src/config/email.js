@@ -320,6 +320,29 @@ const sendKYCPendingEmail = async (userEmail, userName, kycType = "Student KYC")
     return await sendEmail(userEmail, subject, html);
 };
 
+/**
+ * Send Product Extra Information Email
+ */
+const sendProductExtraInfoEmail = async (userEmail, userName, productName, zipDownloadUrl) => {
+    const subject = `Your Extra Information for ${productName || 'Your Product'}`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #B00000;">Extra Information Delivery</h2>
+            <p>Hi ${userName},</p>
+            <p>Here is the extra information and files associated with your purchase of <strong>${productName || 'the product'}</strong>.</p>
+            
+            <div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0; text-align: center;">
+                <a href="${zipDownloadUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Download Files (ZIP)</a>
+            </div>
+            
+            <p>Please log in to your account first if the download requires authentication.</p>
+            <p>If you have any questions, please contact our support team.</p>
+            <p>Best regards,<br>E-Learning Platform Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
 module.exports = {
     sendEmail,
     sendWelcomeEmail,
@@ -330,4 +353,5 @@ module.exports = {
     sendKYCApprovedEmail,
     sendKYCRejectedEmail,
     sendKYCPendingEmail,
+    sendProductExtraInfoEmail,
 };
