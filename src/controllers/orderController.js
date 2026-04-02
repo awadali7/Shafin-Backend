@@ -37,7 +37,7 @@ const createOrder = async (req, res, next) => {
         await client.query("BEGIN");
 
         const productsRes = await client.query(
-            `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing, requires_kyc
+            `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing, requires_kyc, weight, volumetric_weight, extra_shipping_charge
              FROM products
              WHERE id = ANY($1::uuid[])`,
             [ids]
@@ -198,10 +198,14 @@ const createOrder = async (req, res, next) => {
             const p = byId.get(item.product_id);
             const basePrice = Number(p.price);
             const quantity = Number(item.quantity || 1);
-            const weight = Number(p.weight || 1000); // Default to 1kg if not set
+            const weight = Number(p.weight ?? 0); // Default to 0kg if not set
+            const volWeight = Number(p.volumetric_weight ?? 0);
+            const extraShippingCharge = Number(p.extra_shipping_charge ?? 0);
+            const chargeableWeight = Math.max(weight, volWeight); // Whichever is higher
 
             if (p.product_type === 'physical') {
-                totalWeight += weight * quantity;
+                totalWeight += chargeableWeight * quantity;
+                totalShippingCost += extraShippingCharge * quantity; // Base extra charges accumulated
             }
 
             // Calculate pricing for this quantity and zone
@@ -231,10 +235,10 @@ const createOrder = async (req, res, next) => {
         }
 
         let totalShippingCost = 0;
-        
+
         if (hasPhysical && totalWeight > 0) {
             let baseWeight, baseRate, addWeight, addRate;
-            
+
             if (zone === 'local') {
                 baseWeight = Number(settings.local_base_weight || 1000);
                 baseRate = Number(settings.local_base_rate || 50);
@@ -636,12 +640,12 @@ const adminUpdateTracking = async (req, res, next) => {
     const client = await getClient();
     try {
         const { id } = req.params;
-        const { 
-            status, 
-            tracking_number, 
-            tracking_url, 
-            estimated_delivery_date, 
-            shipped_at, 
+        const {
+            status,
+            tracking_number,
+            tracking_url,
+            estimated_delivery_date,
+            shipped_at,
             delivered_at,
             origin_city,
             destination_city,

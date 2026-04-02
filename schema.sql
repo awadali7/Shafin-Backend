@@ -330,8 +330,16 @@ CREATE TABLE IF NOT EXISTS products (
     requires_kyc BOOLEAN DEFAULT false,
     categories JSONB DEFAULT '[]'::jsonb,
     tiered_pricing JSONB,
-    created_by UUID REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    product_detail_pdf VARCHAR(500),
+    weight DECIMAL(10,2) DEFAULT 0.00,
+    length DECIMAL(10,2) DEFAULT 0.00,
+    width DECIMAL(10,2) DEFAULT 0.00,
+    height DECIMAL(10,2) DEFAULT 0.00,
+    volumetric_weight DECIMAL(10,2), -- Calculated as (length * width * height) / 5000
+    extra_shipping_charge DECIMAL(10,2), -- Any specific extra handling per-product
+    shipping_zones_config JSONB, -- Product specific local/regional/national rate overrides
+    weight_slabs_config JSONB, -- Product specific base_weight, add_weight rate overrides
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

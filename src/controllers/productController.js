@@ -460,6 +460,12 @@ const adminCreateProduct = async (req, res, next) => {
             quantity_discounts,
             requires_kyc,
             weight,
+            length,
+            width,
+            height,
+            extra_shipping_charge,
+            shipping_zones_config,
+            weight_slabs_config,
         } = req.body || {};
 
         const type = (product_type || req.body?.type || "").toString().trim();
@@ -663,9 +669,16 @@ const adminCreateProduct = async (req, res, next) => {
                 created_by,
                 tiered_pricing,
                 product_detail_pdf,
-                weight
+                weight,
+                length,
+                width,
+                height,
+                volumetric_weight,
+                extra_shipping_charge,
+                shipping_zones_config,
+                weight_slabs_config
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
             )
             RETURNING
                 id,
@@ -729,7 +742,14 @@ const adminCreateProduct = async (req, res, next) => {
                     } catch (e) { return null; }
                 })(),
                 productDetailPdfUrl,
-                toNumber(weight, 1000)
+                toNumber(weight, 0),
+                toNumber(length, 0),
+                toNumber(width, 0),
+                toNumber(height, 0),
+                Math.ceil((toNumber(length, 0) * toNumber(width, 0) * toNumber(height, 0)) / 5000),
+                toNumber(extra_shipping_charge, 0),
+                (shipping_zones_config && typeof shipping_zones_config === 'string') ? shipping_zones_config : (shipping_zones_config ? JSON.stringify(shipping_zones_config) : null),
+                (weight_slabs_config && typeof weight_slabs_config === 'string') ? weight_slabs_config : (weight_slabs_config ? JSON.stringify(weight_slabs_config) : null)
             ]
         );
 
@@ -771,7 +791,7 @@ const adminUpdateProduct = async (req, res, next) => {
         const { id } = req.params;
 
         const existing = await query(
-            `SELECT id, product_type, digital_file_storage_path FROM products WHERE id = $1`,
+            `SELECT id, product_type, digital_file_storage_path, length, width, height FROM products WHERE id = $1`,
             [id]
         );
         if (existing.rows.length === 0) {
@@ -804,6 +824,12 @@ const adminUpdateProduct = async (req, res, next) => {
             is_contact_only,
             requires_kyc,
             weight,
+            length,
+            width,
+            height,
+            extra_shipping_charge,
+            shipping_zones_config,
+            weight_slabs_config,
             images,
             videos,
             tiered_pricing,
@@ -947,6 +973,44 @@ const adminUpdateProduct = async (req, res, next) => {
 
         if (nextType === "physical" && stock_quantity !== undefined) {
             setIfDefined("stock_quantity", toNumber(stock_quantity, 0));
+        }
+
+        let l = Number(current.length) || 0;
+        let w = Number(current.width) || 0;
+        let h = Number(current.height) || 0;
+        let dimsChanged = false;
+
+        if (weight !== undefined) setIfDefined("weight", toNumber(weight, 0));
+
+        if (length !== undefined) {
+            l = toNumber(length, 0);
+            setIfDefined("length", l);
+            dimsChanged = true;
+        }
+        if (width !== undefined) {
+            w = toNumber(width, 0);
+            setIfDefined("width", w);
+            dimsChanged = true;
+        }
+        if (height !== undefined) {
+            h = toNumber(height, 0);
+            setIfDefined("height", h);
+            dimsChanged = true;
+        }
+
+        if (dimsChanged) {
+            const vw = Math.ceil((l * w * h) / 5000);
+            setIfDefined("volumetric_weight", vw);
+        }
+
+        if (extra_shipping_charge !== undefined) {
+            setIfDefined("extra_shipping_charge", toNumber(extra_shipping_charge, 0));
+        }
+        if (shipping_zones_config !== undefined) {
+            setIfDefined("shipping_zones_config", (shipping_zones_config && typeof shipping_zones_config === 'string') ? shipping_zones_config : (shipping_zones_config ? JSON.stringify(shipping_zones_config) : null));
+        }
+        if (weight_slabs_config !== undefined) {
+            setIfDefined("weight_slabs_config", (weight_slabs_config && typeof weight_slabs_config === 'string') ? weight_slabs_config : (weight_slabs_config ? JSON.stringify(weight_slabs_config) : null));
         }
         if (nextType === "digital") {
             // For digital products, stock doesn't apply
