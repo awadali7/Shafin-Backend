@@ -671,7 +671,6 @@ const adminCreateProduct = async (req, res, next) => {
                 is_coming_soon,
                 is_contact_only,
                 requires_kyc,
-                created_by,
                 tiered_pricing,
                 product_detail_pdf,
                 product_extra_info_id,
@@ -684,7 +683,7 @@ const adminCreateProduct = async (req, res, next) => {
                 shipping_zones_config,
                 weight_slabs_config
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
             )
             RETURNING
                 id,
@@ -739,7 +738,6 @@ const adminCreateProduct = async (req, res, next) => {
                 toBoolean(req.body.is_coming_soon) || false,
                 toBoolean(req.body.is_contact_only) || false,
                 toBoolean(requires_kyc) || false,
-                req.user?.id || null,
                 // Handle tiered pricing (accepts either tiered_pricing or quantity_pricing or quantity_discounts from body)
                 (() => {
                     const pricing = req.body.tiered_pricing || req.body.quantity_pricing || req.body.quantity_discounts;
