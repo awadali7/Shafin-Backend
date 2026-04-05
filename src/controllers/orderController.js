@@ -192,6 +192,7 @@ const createOrder = async (req, res, next) => {
         let itemsSubtotal = 0;
         let totalWeight = 0;
         let totalDiscount = 0;
+        let totalShippingCost = 0;
         const itemsWithPricing = [];
 
         for (const item of items) {
@@ -233,8 +234,6 @@ const createOrder = async (req, res, next) => {
                 appliedPricing: pricingInfo.appliedPricing,
             });
         }
-
-        let totalShippingCost = 0;
 
         if (hasPhysical && totalWeight > 0) {
             let baseWeight, baseRate, addWeight, addRate;
