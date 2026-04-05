@@ -38,6 +38,8 @@ if (
  * Send email
  */
 const sendEmail = async (to, subject, html, text = "") => {
+    const fromName = process.env.EMAIL_FROM_NAME || "DiagTools India";
+
     // Skip email sending if email is not properly configured
     if (
         !process.env.EMAIL_USER ||
@@ -52,7 +54,7 @@ const sendEmail = async (to, subject, html, text = "") => {
 
     try {
         const info = await transporter.sendMail({
-            from: `"E-Learning Platform" <${process.env.EMAIL_FROM}>`,
+            from: `"${fromName}" <${process.env.EMAIL_FROM}>`,
             to,
             subject,
             text,
