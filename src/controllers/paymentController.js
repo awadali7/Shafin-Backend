@@ -55,16 +55,40 @@ async function grantDigitalEntitlementsForOrder(
     try {
         const userRes = await client.query(`SELECT email, first_name FROM users WHERE id = $1`, [userId]);
         const user = userRes.rows[0];
-        const backendUrl = process.env.BACKEND_URL || "http://localhost:5000";
+        const frontendUrl = process.env.FRONTEND_URL
+            ? process.env.FRONTEND_URL.split(",")[0].trim()
+            : "http://localhost:3000";
 
         for (const item of itemsRes.rows) {
             if (item.product_extra_info_id) {
-                const zipDownloadUrl = `${backendUrl}/api/product-extra-info/download/${item.product_extra_info_id}`;
+                const extraInfoRes = await client.query(
+                    `SELECT id, title, slug FROM product_extra_infos WHERE id = $1`,
+                    [item.product_extra_info_id]
+                );
+                const extraInfo = extraInfoRes.rows[0];
+                if (!extraInfo) continue;
+
+                await client.query(
+                    `INSERT INTO product_extra_info_access (user_id, product_extra_info_id, source, granted_by, note)
+                     VALUES ($1, $2, 'order', $3, $4)
+                     ON CONFLICT (user_id, product_extra_info_id) DO UPDATE
+                     SET source = 'order',
+                         note = EXCLUDED.note,
+                         updated_at = CURRENT_TIMESTAMP`,
+                    [
+                        userId,
+                        item.product_extra_info_id,
+                        grantedBy,
+                        `Granted by paid order for ${item.name}`,
+                    ]
+                );
+
                 await sendProductExtraInfoEmail(
                     user.email,
                     user.first_name,
                     item.name,
-                    zipDownloadUrl
+                    extraInfo.title,
+                    `${frontendUrl}/product-extra-info/${extraInfo.slug}`
                 );
             }
         }

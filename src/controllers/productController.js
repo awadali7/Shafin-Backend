@@ -172,6 +172,7 @@ const getAllProducts = async (req, res, next) => {
                 p.tiered_pricing,
                 p.requires_kyc,
                 p.product_detail_pdf,
+                p.product_extra_info_id,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -252,6 +253,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.tiered_pricing,
                 p.requires_kyc,
                 p.product_detail_pdf,
+                p.product_extra_info_id,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -321,6 +323,7 @@ const getProductBySlug = async (req, res, next) => {
                 tiered_pricing,
                 requires_kyc,
                 product_detail_pdf,
+                product_extra_info_id,
                 weight,
                 created_at,
                 updated_at
@@ -398,6 +401,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 tiered_pricing,
                 requires_kyc,
                 product_detail_pdf,
+                product_extra_info_id,
                 weight,
                 created_at,
                 updated_at
@@ -458,14 +462,15 @@ const adminCreateProduct = async (req, res, next) => {
             images,
             videos,
             quantity_discounts,
-            requires_kyc,
-            weight,
-            length,
-            width,
-            height,
-            extra_shipping_charge,
-            shipping_zones_config,
-            weight_slabs_config,
+                requires_kyc,
+                weight,
+                length,
+                width,
+                height,
+                product_extra_info_id,
+                extra_shipping_charge,
+                shipping_zones_config,
+                weight_slabs_config,
         } = req.body || {};
 
         const type = (product_type || req.body?.type || "").toString().trim();
@@ -669,6 +674,7 @@ const adminCreateProduct = async (req, res, next) => {
                 created_by,
                 tiered_pricing,
                 product_detail_pdf,
+                product_extra_info_id,
                 weight,
                 length,
                 width,
@@ -678,7 +684,7 @@ const adminCreateProduct = async (req, res, next) => {
                 shipping_zones_config,
                 weight_slabs_config
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
             )
             RETURNING
                 id,
@@ -705,6 +711,7 @@ const adminCreateProduct = async (req, res, next) => {
                 is_contact_only,
                 tiered_pricing,
                 requires_kyc,
+                product_extra_info_id,
                 weight,
                 created_at,
                 updated_at`,
@@ -742,6 +749,7 @@ const adminCreateProduct = async (req, res, next) => {
                     } catch (e) { return null; }
                 })(),
                 productDetailPdfUrl,
+                product_extra_info_id || null,
                 toNumber(weight, 0),
                 toNumber(length, 0),
                 toNumber(width, 0),
@@ -835,6 +843,7 @@ const adminUpdateProduct = async (req, res, next) => {
             tiered_pricing,
             quantity_pricing,
             quantity_discounts,
+            product_extra_info_id,
         } = req.body || {};
 
         const nextType = (product_type || type || current.product_type || "")
@@ -1027,6 +1036,8 @@ const adminUpdateProduct = async (req, res, next) => {
             setIfDefined("digital_file_format", digitalFormat);
         if (productDetailPdfUrl !== undefined)
             setIfDefined("product_detail_pdf", productDetailPdfUrl);
+        if (product_extra_info_id !== undefined)
+            setIfDefined("product_extra_info_id", product_extra_info_id || null);
 
         // Handle images array (JSONB)
         if (images !== undefined) {
@@ -1102,6 +1113,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 requires_kyc,
                 tiered_pricing,
                 product_detail_pdf,
+                product_extra_info_id,
                 created_at,
                 updated_at`,
             values

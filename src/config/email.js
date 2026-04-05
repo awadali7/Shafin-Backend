@@ -323,19 +323,22 @@ const sendKYCPendingEmail = async (userEmail, userName, kycType = "Student KYC")
 /**
  * Send Product Extra Information Email
  */
-const sendProductExtraInfoEmail = async (userEmail, userName, productName, zipDownloadUrl) => {
-    const subject = `Your Extra Information for ${productName || 'Your Product'}`;
+const sendProductExtraInfoEmail = async (userEmail, userName, productName, extraInfoTitle, accessUrl) => {
+    const subject = `You got access to ${extraInfoTitle || productName || 'your product information'}`;
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #B00000;">Extra Information Delivery</h2>
+            <h2 style="color: #B00000;">Product Extra Information Access</h2>
             <p>Hi ${userName},</p>
-            <p>Here is the extra information and files associated with your purchase of <strong>${productName || 'the product'}</strong>.</p>
-            
-            <div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0; text-align: center;">
-                <a href="${zipDownloadUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Download Files (ZIP)</a>
+            <p>You got access to <strong>${extraInfoTitle || productName || 'this product information'}</strong>.</p>
+            <p>You can now view the title, content, images, and PDF files on the protected page.</p>
+
+            ${accessUrl
+                ? `<div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0; text-align: center;">
+                <a href="${accessUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Open ${extraInfoTitle || 'Extra Information'}</a>
             </div>
-            
-            <p>Please log in to your account first if the download requires authentication.</p>
+            <p>Please log in to your account first if access requires authentication.</p>`
+                : `<p>The shared package includes rich text, images, and PDF files. Please contact support if you need help accessing it.</p>`}
+
             <p>If you have any questions, please contact our support team.</p>
             <p>Best regards,<br>E-Learning Platform Team</p>
         </div>

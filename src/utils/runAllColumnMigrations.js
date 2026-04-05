@@ -29,6 +29,10 @@ async function runMigrations() {
             name: "Update notifications type constraint",
             file: "add_kyc_table.sql", // This file also updates notifications
         },
+        {
+            name: "Add product extra info tables and columns",
+            file: "add_product_extra_infos.sql",
+        },
     ];
 
     try {
@@ -82,11 +86,19 @@ async function runMigrations() {
             },
             {
                 table: "products",
-                columns: ["images", "videos"],
+                columns: ["images", "videos", "product_extra_info_id"],
             },
             {
                 table: "kyc_verifications",
                 columns: ["id_proof_urls"],
+            },
+            {
+                table: "product_extra_infos",
+                columns: ["id", "title", "slug", "zip_file_path"],
+            },
+            {
+                table: "product_extra_info_access",
+                columns: ["user_id", "product_extra_info_id", "source"],
             },
         ];
 

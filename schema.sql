@@ -331,6 +331,7 @@ CREATE TABLE IF NOT EXISTS products (
     categories JSONB DEFAULT '[]'::jsonb,
     tiered_pricing JSONB,
     product_detail_pdf VARCHAR(500),
+    product_extra_info_id UUID,
     weight DECIMAL(10,2) DEFAULT 0.00,
     length DECIMAL(10,2) DEFAULT 0.00,
     width DECIMAL(10,2) DEFAULT 0.00,
@@ -348,9 +349,60 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_images ON products USING GIN (images);
 CREATE INDEX IF NOT EXISTS idx_products_videos ON products USING GIN (videos);
+CREATE INDEX IF NOT EXISTS idx_products_extra_info ON products(product_extra_info_id);
 
 DROP TRIGGER IF EXISTS update_products_updated_at ON products;
 CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =========================
+-- Product Extra Info Packages
+-- =========================
+CREATE TABLE IF NOT EXISTS product_extra_infos (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE NOT NULL,
+    body TEXT,
+    zip_file_path VARCHAR(1000),
+    image_files JSONB DEFAULT '[]'::jsonb,
+    pdf_files JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE product_extra_infos
+    ALTER COLUMN zip_file_path DROP NOT NULL;
+
+ALTER TABLE products
+    DROP CONSTRAINT IF EXISTS fk_products_product_extra_info;
+
+ALTER TABLE products
+    ADD CONSTRAINT fk_products_product_extra_info
+    FOREIGN KEY (product_extra_info_id)
+    REFERENCES product_extra_infos(id)
+    ON DELETE SET NULL;
+
+DROP TRIGGER IF EXISTS update_product_extra_infos_updated_at ON product_extra_infos;
+CREATE TRIGGER update_product_extra_infos_updated_at BEFORE UPDATE ON product_extra_infos
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TABLE IF NOT EXISTS product_extra_info_access (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    product_extra_info_id UUID NOT NULL REFERENCES product_extra_infos(id) ON DELETE CASCADE,
+    source VARCHAR(30) NOT NULL CHECK (source IN ('admin_grant', 'order')),
+    granted_by UUID REFERENCES users(id),
+    note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, product_extra_info_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_extra_info_access_user ON product_extra_info_access(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_extra_info_access_info ON product_extra_info_access(product_extra_info_id);
+
+DROP TRIGGER IF EXISTS update_product_extra_info_access_updated_at ON product_extra_info_access;
+CREATE TRIGGER update_product_extra_info_access_updated_at BEFORE UPDATE ON product_extra_info_access
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =========================
