@@ -10,6 +10,255 @@ function toMoney(n) {
     return Math.round(num * 100) / 100;
 }
 
+function normalizeLocationValue(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function getShippingZone(originCity, originState, customer = {}) {
+    const customerCity = normalizeLocationValue(customer.city);
+    const customerState = normalizeLocationValue(customer.state);
+    const normalizedOriginCity = normalizeLocationValue(originCity);
+    const normalizedOriginState = normalizeLocationValue(originState);
+
+    if (customerCity && normalizedOriginCity && customerCity === normalizedOriginCity) {
+        return "local";
+    }
+
+    if (customerState && normalizedOriginState && customerState === normalizedOriginState) {
+        return "regional";
+    }
+
+    return "national";
+}
+
+function getZoneRateConfig(settings, zone) {
+    if (zone === "local") {
+        return {
+            baseWeight: Number(settings.local_base_weight || 1000),
+            baseRate: Number(settings.local_base_rate || 50),
+            additionalWeight: Number(settings.local_additional_weight || 1000),
+            additionalRate: Number(settings.local_additional_rate || 40),
+        };
+    }
+
+    if (zone === "regional") {
+        return {
+            baseWeight: Number(settings.regional_base_weight || 1000),
+            baseRate: Number(settings.regional_base_rate || 70),
+            additionalWeight: Number(settings.regional_additional_weight || 1000),
+            additionalRate: Number(settings.regional_additional_rate || 60),
+        };
+    }
+
+    return {
+        baseWeight: Number(settings.national_base_weight || 1000),
+        baseRate: Number(settings.national_base_rate || 100),
+        additionalWeight: Number(settings.national_additional_weight || 1000),
+        additionalRate: Number(settings.national_additional_rate || 90),
+    };
+}
+
+function calculateWeightBasedShipping(weight, settings, zone) {
+    if (weight <= 0) return 0;
+
+    const {
+        baseWeight,
+        baseRate,
+        additionalWeight,
+        additionalRate,
+    } = getZoneRateConfig(settings, zone);
+
+    if (weight <= baseWeight) {
+        return baseRate;
+    }
+
+    const extraWeight = weight - baseWeight;
+    const extraSlabs = Math.ceil(extraWeight / additionalWeight);
+    return baseRate + extraSlabs * additionalRate;
+}
+
+async function getShippingSettings(client) {
+    const settingsRes = await client.query(
+        "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('shipping_origin_city', 'shipping_origin_state', 'local_base_weight', 'local_base_rate', 'local_additional_weight', 'local_additional_rate', 'regional_base_weight', 'regional_base_rate', 'regional_additional_weight', 'regional_additional_rate', 'national_base_weight', 'national_base_rate', 'national_additional_weight', 'national_additional_rate')"
+    );
+    const settings = {};
+    settingsRes.rows.forEach((r) => (settings[r.setting_key] = r.setting_value));
+    return settings;
+}
+
+async function loadProductsForItems(client, items) {
+    const ids = items.map((i) => i.product_id).filter(Boolean);
+    if (ids.length !== items.length) {
+        return {
+            error: {
+                status: 400,
+                body: {
+                    success: false,
+                    message: "Each item must include product_id",
+                },
+            },
+        };
+    }
+
+    const productsRes = await client.query(
+        `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing, requires_kyc, weight, volumetric_weight, extra_shipping_charge, origin_city, origin_state, origin_pincode, cover_image, slug
+         FROM products
+         WHERE id = ANY($1::uuid[])`,
+        [ids]
+    );
+
+    return {
+        products: productsRes.rows,
+        byId: new Map(productsRes.rows.map((p) => [p.id, p])),
+    };
+}
+
+function buildOrderPricingQuote(items, customer, byId, settings) {
+    const defaultOriginCity = settings.shipping_origin_city || "Ernakulam";
+    const defaultOriginState = settings.shipping_origin_state || "Kerala";
+
+    let itemsSubtotal = 0;
+    let totalDiscount = 0;
+    let totalShippingCost = 0;
+    const itemsWithPricing = [];
+    const originGroups = {};
+
+    for (const item of items) {
+        const p = byId.get(item.product_id);
+        const basePrice = Number(p.price);
+        const quantity = Number(item.quantity || 1);
+        const weight = Number(p.weight ?? 0);
+        const volWeight = Number(p.volumetric_weight ?? 0);
+        const extraShippingCharge = Number(p.extra_shipping_charge ?? 0);
+        const chargeableWeight = Math.max(weight, volWeight);
+
+        const itemOriginCity = p.origin_city || defaultOriginCity;
+        const itemOriginState = p.origin_state || defaultOriginState;
+        const originKey = `${itemOriginCity}_${itemOriginState}`.toLowerCase();
+        const zone = getShippingZone(itemOriginCity, itemOriginState, customer);
+
+        if (!originGroups[originKey]) {
+            originGroups[originKey] = {
+                key: originKey,
+                origin_city: itemOriginCity,
+                origin_state: itemOriginState,
+                zone,
+                totalWeight: 0,
+                slabCost: 0,
+            };
+        }
+
+        if (p.product_type === "physical") {
+            originGroups[originKey].totalWeight += chargeableWeight * quantity;
+            totalShippingCost += extraShippingCharge * quantity;
+        }
+
+        const pricingInfo = calculateQuantityPrice(
+            basePrice,
+            quantity,
+            p.tiered_pricing || [],
+            zone
+        );
+
+        itemsSubtotal += pricingInfo.itemsTotal;
+        totalDiscount += pricingInfo.savings;
+        totalShippingCost += pricingInfo.courierCharge * quantity;
+
+        itemsWithPricing.push({
+            product_id: p.id,
+            product_name: p.name,
+            product_slug: p.slug,
+            cover_image: p.cover_image,
+            product_type: p.product_type,
+            quantity,
+            unit_price: basePrice,
+            line_total: toMoney(pricingInfo.itemsTotal),
+            price_per_item: toMoney(pricingInfo.pricePerItem),
+            courier_charge: toMoney(pricingInfo.courierCharge * quantity),
+            origin_city: itemOriginCity,
+            origin_state: itemOriginState,
+            zone,
+        });
+    }
+
+    for (const originKey in originGroups) {
+        const group = originGroups[originKey];
+        group.slabCost = toMoney(
+            calculateWeightBasedShipping(Number(group.totalWeight || 0), settings, group.zone)
+        );
+        totalShippingCost += group.slabCost;
+    }
+
+    const subtotal = toMoney(itemsSubtotal);
+    const shippingCost = toMoney(totalShippingCost);
+    const discount = toMoney(totalDiscount);
+    const total = toMoney(subtotal + shippingCost);
+
+    return {
+        subtotal,
+        discount,
+        shipping_cost: shippingCost,
+        total,
+        items: itemsWithPricing,
+        shipping_groups: Object.values(originGroups),
+    };
+}
+
+const getOrderQuote = async (req, res, next) => {
+    const client = await getClient();
+    try {
+        const { items, customer } = req.body || {};
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "items are required",
+            });
+        }
+
+        const loaded = await loadProductsForItems(client, items);
+        if (loaded.error) {
+            return res.status(loaded.error.status).json(loaded.error.body);
+        }
+
+        const { byId } = loaded;
+
+        for (const item of items) {
+            const p = byId.get(item.product_id);
+            if (!p || !p.is_active) {
+                return res.status(400).json({
+                    success: false,
+                    message: "One or more products are invalid or inactive",
+                });
+            }
+
+            const qty = Math.max(1, parseInt(item.quantity || "1", 10) || 1);
+            item.quantity = p.product_type === "digital" ? 1 : qty;
+
+            if (
+                p.product_type === "physical" &&
+                (p.stock_quantity ?? 0) < item.quantity
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Not enough stock for ${p.name}`,
+                });
+            }
+        }
+
+        const settings = await getShippingSettings(client);
+        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings);
+
+        return res.json({
+            success: true,
+            data: quote,
+        });
+    } catch (error) {
+        next(error);
+    } finally {
+        client.release();
+    }
+};
+
 /**
  * User: create order from cart items
  * body: { items: [{product_id, quantity}], customer?: {...shipping/contact} }
@@ -25,28 +274,18 @@ const createOrder = async (req, res, next) => {
             });
         }
 
-        // Load products
-        const ids = items.map((i) => i.product_id).filter(Boolean);
-        if (ids.length !== items.length) {
-            return res.status(400).json({
-                success: false,
-                message: "Each item must include product_id",
-            });
-        }
-
         await client.query("BEGIN");
 
-        const productsRes = await client.query(
-            `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing, requires_kyc, weight, volumetric_weight, extra_shipping_charge
-             FROM products
-             WHERE id = ANY($1::uuid[])`,
-            [ids]
-        );
+        const loaded = await loadProductsForItems(client, items);
+        if (loaded.error) {
+            await client.query("ROLLBACK");
+            return res.status(loaded.error.status).json(loaded.error.body);
+        }
 
-        const byId = new Map(productsRes.rows.map((p) => [p.id, p]));
+        const { products, byId } = loaded;
 
         // Check if any product requires KYC
-        const hasKycProduct = productsRes.rows.some((p) => p.requires_kyc);
+        const hasKycProduct = products.some((p) => p.requires_kyc);
 
         if (hasKycProduct) {
             // Admins bypass KYC requirements
@@ -171,103 +410,13 @@ const createOrder = async (req, res, next) => {
             return p?.product_type === "physical";
         });
 
-        // Fetch shipping origin and courier settings
-        const settingsRes = await client.query(
-            "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('shipping_origin_city', 'shipping_origin_state', 'local_base_weight', 'local_base_rate', 'local_additional_weight', 'local_additional_rate', 'regional_base_weight', 'regional_base_rate', 'regional_additional_weight', 'regional_additional_rate', 'national_base_weight', 'national_base_rate', 'national_additional_weight', 'national_additional_rate')"
-        );
-        const settings = {};
-        settingsRes.rows.forEach((r) => (settings[r.setting_key] = r.setting_value));
-        const originCity = settings.shipping_origin_city || "Ernakulam";
-        const originState = settings.shipping_origin_state || "Kerala";
-
-        // Determine Shipping Zone
-        let zone = "national";
-        if (customer?.city?.trim().toLowerCase() === originCity.trim().toLowerCase()) {
-            zone = "local";
-        } else if (customer?.state?.trim().toLowerCase() === originState.trim().toLowerCase()) {
-            zone = "regional";
-        }
-
-        // Calculate totals with quantity pricing and zone-based shipping
-        let itemsSubtotal = 0;
-        let totalWeight = 0;
-        let totalDiscount = 0;
-        let totalShippingCost = 0;
-        const itemsWithPricing = [];
-
-        for (const item of items) {
-            const p = byId.get(item.product_id);
-            const basePrice = Number(p.price);
-            const quantity = Number(item.quantity || 1);
-            const weight = Number(p.weight ?? 0); // Default to 0kg if not set
-            const volWeight = Number(p.volumetric_weight ?? 0);
-            const extraShippingCharge = Number(p.extra_shipping_charge ?? 0);
-            const chargeableWeight = Math.max(weight, volWeight); // Whichever is higher
-
-            if (p.product_type === 'physical') {
-                totalWeight += chargeableWeight * quantity;
-                totalShippingCost += extraShippingCharge * quantity; // Base extra charges accumulated
-            }
-
-            // Calculate pricing for this quantity and zone
-            const pricingInfo = calculateQuantityPrice(
-                basePrice,
-                quantity,
-                p.tiered_pricing || [],
-                zone
-            );
-
-            const itemItemsTotal = pricingInfo.itemsTotal; // Total for items only
-            const itemSavings = pricingInfo.savings;
-
-            itemsSubtotal += itemItemsTotal;
-            totalDiscount += itemSavings;
-
-            itemsWithPricing.push({
-                ...item,
-                basePrice,
-                totalPrice: pricingInfo.totalPrice, // Items + Shipping for this item
-                pricePerItem: pricingInfo.pricePerItem,
-                courierCharge: 0, // No longer tracked per item
-                savings: itemSavings,
-                isPricing: pricingInfo.isPricing,
-                appliedPricing: pricingInfo.appliedPricing,
-            });
-        }
-
-        if (hasPhysical && totalWeight > 0) {
-            let baseWeight, baseRate, addWeight, addRate;
-
-            if (zone === 'local') {
-                baseWeight = Number(settings.local_base_weight || 1000);
-                baseRate = Number(settings.local_base_rate || 50);
-                addWeight = Number(settings.local_additional_weight || 1000);
-                addRate = Number(settings.local_additional_rate || 40);
-            } else if (zone === 'regional') {
-                baseWeight = Number(settings.regional_base_weight || 1000);
-                baseRate = Number(settings.regional_base_rate || 70);
-                addWeight = Number(settings.regional_additional_weight || 1000);
-                addRate = Number(settings.regional_additional_rate || 60);
-            } else {
-                baseWeight = Number(settings.national_base_weight || 1000);
-                baseRate = Number(settings.national_base_rate || 100);
-                addWeight = Number(settings.national_additional_weight || 1000);
-                addRate = Number(settings.national_additional_rate || 90);
-            }
-
-            if (totalWeight <= baseWeight) {
-                totalShippingCost = baseRate;
-            } else {
-                const extraWeight = totalWeight - baseWeight;
-                const extraSlabs = Math.ceil(extraWeight / addWeight);
-                totalShippingCost = baseRate + (extraSlabs * addRate);
-            }
-        }
-
-        const subtotal = toMoney(itemsSubtotal);
-        const shippingCost = toMoney(totalShippingCost);
-        totalDiscount = toMoney(totalDiscount);
-        const total = toMoney(subtotal + shippingCost);
+        const settings = await getShippingSettings(client);
+        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings);
+        const subtotal = quote.subtotal;
+        const shippingCost = quote.shipping_cost;
+        const totalDiscount = quote.discount;
+        const total = quote.total;
+        const itemsWithPricing = quote.items;
 
 
         const orderRes = await client.query(
@@ -318,11 +467,11 @@ const createOrder = async (req, res, next) => {
                  ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
                 [
                     order.id,
-                    p.id,
+                    itemInfo.product_id,
                     itemInfo.quantity,
-                    itemInfo.basePrice,
-                    itemInfo.isPricing ? itemInfo.totalPrice : null,
-                    itemInfo.isPricing ? "bulk_pricing" : "regular",
+                    itemInfo.unit_price,
+                    itemInfo.line_total !== itemInfo.unit_price * itemInfo.quantity ? itemInfo.line_total : null,
+                    itemInfo.line_total !== itemInfo.unit_price * itemInfo.quantity ? "bulk_pricing" : "regular",
                     p.product_type,
                 ]
             );
@@ -771,6 +920,7 @@ const adminUpdateTracking = async (req, res, next) => {
 };
 
 module.exports = {
+    getOrderQuote,
     createOrder,
     getMyOrders,
     adminMarkOrderPaid,

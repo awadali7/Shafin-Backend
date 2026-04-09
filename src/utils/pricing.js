@@ -43,8 +43,7 @@ function calculateQuantityPrice(basePrice, quantity, quantityPricing = [], zone 
 
     // Apply tiered pricing
     const pricePerItem = Number(matchingTier.price_per_item);
-    // Courier charge is no longer calculated at the item level (global weight-based logic applies at order level)
-    const courierCharge = 0;
+    const courierCharge = Number(matchingTier.courier_charge || 0);
 
     const itemsTotal = pricePerItem * quantity;
     const totalPrice = itemsTotal;

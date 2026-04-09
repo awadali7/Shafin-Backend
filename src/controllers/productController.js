@@ -173,6 +173,9 @@ const getAllProducts = async (req, res, next) => {
                 p.requires_kyc,
                 p.product_detail_pdf,
                 p.product_extra_info_id,
+                p.origin_city,
+                p.origin_state,
+                p.origin_pincode,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -254,6 +257,9 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.requires_kyc,
                 p.product_detail_pdf,
                 p.product_extra_info_id,
+                p.origin_city,
+                p.origin_state,
+                p.origin_pincode,
                 p.created_at,
                 p.updated_at
              FROM products p
@@ -324,6 +330,9 @@ const getProductBySlug = async (req, res, next) => {
                 requires_kyc,
                 product_detail_pdf,
                 product_extra_info_id,
+                origin_city,
+                origin_state,
+                origin_pincode,
                 weight,
                 created_at,
                 updated_at
@@ -402,6 +411,9 @@ const adminGetAllProducts = async (req, res, next) => {
                 requires_kyc,
                 product_detail_pdf,
                 product_extra_info_id,
+                origin_city,
+                origin_state,
+                origin_pincode,
                 weight,
                 created_at,
                 updated_at
@@ -471,6 +483,9 @@ const adminCreateProduct = async (req, res, next) => {
                 extra_shipping_charge,
                 shipping_zones_config,
                 weight_slabs_config,
+                origin_city,
+                origin_state,
+                origin_pincode,
         } = req.body || {};
 
         const type = (product_type || req.body?.type || "").toString().trim();
@@ -681,9 +696,12 @@ const adminCreateProduct = async (req, res, next) => {
                 volumetric_weight,
                 extra_shipping_charge,
                 shipping_zones_config,
-                weight_slabs_config
+                weight_slabs_config,
+                origin_city,
+                origin_state,
+                origin_pincode
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37
             )
             RETURNING
                 id,
@@ -711,6 +729,9 @@ const adminCreateProduct = async (req, res, next) => {
                 tiered_pricing,
                 requires_kyc,
                 product_extra_info_id,
+                origin_city,
+                origin_state,
+                origin_pincode,
                 weight,
                 created_at,
                 updated_at`,
@@ -755,7 +776,10 @@ const adminCreateProduct = async (req, res, next) => {
                 Math.ceil((toNumber(length, 0) * toNumber(width, 0) * toNumber(height, 0)) / 5000),
                 toNumber(extra_shipping_charge, 0),
                 (shipping_zones_config && typeof shipping_zones_config === 'string') ? shipping_zones_config : (shipping_zones_config ? JSON.stringify(shipping_zones_config) : null),
-                (weight_slabs_config && typeof weight_slabs_config === 'string') ? weight_slabs_config : (weight_slabs_config ? JSON.stringify(weight_slabs_config) : null)
+                (weight_slabs_config && typeof weight_slabs_config === 'string') ? weight_slabs_config : (weight_slabs_config ? JSON.stringify(weight_slabs_config) : null),
+                origin_city?.trim() || null,
+                origin_state?.trim() || null,
+                origin_pincode?.trim() || null
             ]
         );
 
@@ -842,6 +866,9 @@ const adminUpdateProduct = async (req, res, next) => {
             quantity_pricing,
             quantity_discounts,
             product_extra_info_id,
+            origin_city,
+            origin_state,
+            origin_pincode,
         } = req.body || {};
 
         const nextType = (product_type || type || current.product_type || "")
@@ -1036,6 +1063,12 @@ const adminUpdateProduct = async (req, res, next) => {
             setIfDefined("product_detail_pdf", productDetailPdfUrl);
         if (product_extra_info_id !== undefined)
             setIfDefined("product_extra_info_id", product_extra_info_id || null);
+        if (origin_city !== undefined)
+            setIfDefined("origin_city", origin_city?.trim() || null);
+        if (origin_state !== undefined)
+            setIfDefined("origin_state", origin_state?.trim() || null);
+        if (origin_pincode !== undefined)
+            setIfDefined("origin_pincode", origin_pincode?.trim() || null);
 
         // Handle images array (JSONB)
         if (images !== undefined) {
@@ -1112,6 +1145,9 @@ const adminUpdateProduct = async (req, res, next) => {
                 tiered_pricing,
                 product_detail_pdf,
                 product_extra_info_id,
+                origin_city,
+                origin_state,
+                origin_pincode,
                 created_at,
                 updated_at`,
             values

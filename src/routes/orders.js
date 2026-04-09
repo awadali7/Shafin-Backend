@@ -4,7 +4,10 @@ const router = express.Router();
 const orderController = require("../controllers/orderController");
 const { authenticate, isAdmin } = require("../middleware/auth");
 
-// All routes require authentication
+// Public quote route for checkout estimation
+router.post("/quote", orderController.getOrderQuote);
+
+// All other routes require authentication
 router.use(authenticate);
 
 // User routes
