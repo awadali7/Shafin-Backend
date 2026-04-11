@@ -328,6 +328,7 @@ CREATE TABLE IF NOT EXISTS products (
     is_coming_soon BOOLEAN DEFAULT false,
     is_contact_only BOOLEAN DEFAULT false,
     requires_kyc BOOLEAN DEFAULT false,
+    show_price_before_kyc BOOLEAN DEFAULT false,
     categories JSONB DEFAULT '[]'::jsonb,
     tiered_pricing JSONB,
     product_detail_pdf VARCHAR(500),
@@ -340,6 +341,9 @@ CREATE TABLE IF NOT EXISTS products (
     extra_shipping_charge DECIMAL(10,2), -- Any specific extra handling per-product
     shipping_zones_config JSONB, -- Product specific local/regional/national rate overrides
     weight_slabs_config JSONB, -- Product specific base_weight, add_weight rate overrides
+    origin_city VARCHAR(255),
+    origin_state VARCHAR(255),
+    origin_pincode VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -562,5 +566,3 @@ CREATE TABLE IF NOT EXISTS site_settings (
     description TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-

@@ -8,4 +8,7 @@ ALTER TABLE products
     ADD COLUMN IF NOT EXISTS volumetric_weight DECIMAL(10,2),
     ADD COLUMN IF NOT EXISTS extra_shipping_charge DECIMAL(10,2),
     ADD COLUMN IF NOT EXISTS shipping_zones_config JSONB,
-    ADD COLUMN IF NOT EXISTS weight_slabs_config JSONB;
+    ADD COLUMN IF NOT EXISTS weight_slabs_config JSONB,
+    ADD COLUMN IF NOT EXISTS origin_city VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS origin_state VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS origin_pincode VARCHAR(20);

@@ -33,6 +33,9 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS videos JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_featured BOOLEAN DEFAULT false;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_coming_soon BOOLEAN DEFAULT false;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS requires_kyc BOOLEAN DEFAULT false;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS origin_city VARCHAR(255);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS origin_state VARCHAR(255);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS origin_pincode VARCHAR(20);
 
 -- 4. Drop old indexes
 DROP INDEX IF EXISTS idx_products_quantity_pricing;
@@ -76,7 +79,7 @@ SELECT '=== Verifying products table columns ===' as status;
 SELECT column_name, data_type
 FROM information_schema.columns 
 WHERE table_name = 'products' 
-  AND column_name IN ('tiered_pricing', 'categories', 'images', 'videos', 'is_featured', 'is_coming_soon', 'requires_kyc')
+  AND column_name IN ('tiered_pricing', 'categories', 'images', 'videos', 'is_featured', 'is_coming_soon', 'requires_kyc', 'origin_city', 'origin_state', 'origin_pincode')
 ORDER BY column_name;
 
 SELECT '=== Verifying orders table columns ===' as status;
@@ -93,4 +96,3 @@ WHERE table_name = 'order_items'
 ORDER BY column_name;
 
 SELECT '✓ All done! Your database should now match your application code.' as status;
-

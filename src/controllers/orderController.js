@@ -4,6 +4,8 @@ const {
     getNextPricingOption,
 } = require("../utils/pricing");
 
+let hasOrderNumberColumnCache = null;
+
 function toMoney(n) {
     const num = Number(n);
     if (!Number.isFinite(num)) return 0;
@@ -75,6 +77,34 @@ function calculateWeightBasedShipping(weight, settings, zone) {
     const extraWeight = weight - baseWeight;
     const extraSlabs = Math.ceil(extraWeight / additionalWeight);
     return baseRate + extraSlabs * additionalRate;
+}
+
+async function hasOrderNumberColumn() {
+    if (hasOrderNumberColumnCache !== null) {
+        return hasOrderNumberColumnCache;
+    }
+
+    const result = await query(
+        `SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'orders' AND column_name = 'order_number'
+        ) AS exists`
+    );
+
+    hasOrderNumberColumnCache = result.rows[0]?.exists === true;
+    return hasOrderNumberColumnCache;
+}
+
+async function getOrderNumberSelect(alias = "") {
+    const hasOrderNumber = await hasOrderNumberColumn();
+    const prefix = alias ? `${alias}.` : "";
+
+    if (hasOrderNumber) {
+        return `${prefix}order_number`;
+    }
+
+    return `${prefix}id::text AS order_number`;
 }
 
 async function getShippingSettings(client) {
@@ -419,6 +449,7 @@ const createOrder = async (req, res, next) => {
         const itemsWithPricing = quote.items;
 
 
+        const hasOrderNumber = await hasOrderNumberColumn();
         const orderRes = await client.query(
             `INSERT INTO orders (
                 user_id,
@@ -438,7 +469,7 @@ const createOrder = async (req, res, next) => {
              ) VALUES (
                 $1,'pending',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
              )
-             RETURNING id, order_number, status, subtotal, discount, shipping_cost, total, created_at`,
+             RETURNING id, status, subtotal, discount, shipping_cost, total, created_at${hasOrderNumber ? ", order_number" : ""}`,
             [
                 req.user.id,
                 subtotal,
@@ -456,7 +487,10 @@ const createOrder = async (req, res, next) => {
             ]
         );
 
-        const order = orderRes.rows[0];
+        const order = {
+            ...orderRes.rows[0],
+            order_number: orderRes.rows[0].order_number || String(orderRes.rows[0].id),
+        };
 
         // Insert order items with pricing information
         for (const itemInfo of itemsWithPricing) {
@@ -505,8 +539,9 @@ const createOrder = async (req, res, next) => {
  */
 const getMyOrders = async (req, res, next) => {
     try {
+        const orderNumberSelect = await getOrderNumberSelect();
         const ordersRes = await query(
-            `SELECT id, order_number, status, subtotal, shipping_cost, total, 
+            `SELECT id, ${orderNumberSelect}, status, subtotal, shipping_cost, total, 
                     tracking_number, tracking_url, estimated_delivery_date, 
                     shipped_at, delivered_at, origin_city, destination_city,
                     courier_service_type, tracking_history, created_at, updated_at
@@ -647,10 +682,11 @@ const adminMarkOrderPaid = async (req, res, next) => {
  */
 const adminGetAllOrders = async (req, res, next) => {
     try {
+        const orderNumberSelect = await getOrderNumberSelect("o");
         const result = await query(
             `SELECT
                 o.id,
-                o.order_number,
+                ${orderNumberSelect},
                 o.status,
                 o.total,
                 o.subtotal,
@@ -692,10 +728,11 @@ const adminGetAllOrders = async (req, res, next) => {
 const adminGetOrderById = async (req, res, next) => {
     try {
         const { id } = req.params;
+        const orderNumberSelect = await getOrderNumberSelect("o");
         const orderRes = await query(
             `SELECT
                 o.id,
-                o.order_number,
+                ${orderNumberSelect},
                 o.status,
                 o.payment_provider,
                 o.payment_reference,

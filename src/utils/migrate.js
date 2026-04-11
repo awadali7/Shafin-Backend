@@ -2,6 +2,7 @@ require("dotenv").config();
 const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
+const { runAllColumnMigrations } = require("./runAllColumnMigrations");
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -24,6 +25,8 @@ async function migrate() {
         await pool.query(schema);
 
         console.log("✅ Database migration completed successfully!");
+
+        await runAllColumnMigrations(pool);
 
         // Create admin user if specified in env
         if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
@@ -65,4 +68,10 @@ async function migrate() {
     }
 }
 
-migrate();
+if (require.main === module) {
+    migrate();
+}
+
+module.exports = {
+    migrate,
+};

@@ -43,6 +43,24 @@ const query = async (text, params) => {
     }
 };
 
+let schemaReadyPromise = null;
+
+const ensureRequiredSchema = async () => {
+    if (!schemaReadyPromise) {
+        schemaReadyPromise = (async () => {
+            await pool.query(`
+                ALTER TABLE products
+                ADD COLUMN IF NOT EXISTS show_price_before_kyc BOOLEAN DEFAULT false
+            `);
+        })().catch((error) => {
+            schemaReadyPromise = null;
+            throw error;
+        });
+    }
+
+    return schemaReadyPromise;
+};
+
 // Helper function to get a client for transactions
 const getClient = async () => {
     const client = await pool.connect();
@@ -66,4 +84,5 @@ module.exports = {
     pool,
     query,
     getClient,
+    ensureRequiredSchema,
 };

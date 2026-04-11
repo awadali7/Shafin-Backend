@@ -108,6 +108,31 @@ BEGIN
     END IF;
 END $$;
 
+-- Add product origin columns
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'products' AND column_name = 'origin_city'
+    ) THEN
+        ALTER TABLE products ADD COLUMN origin_city VARCHAR(255);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'products' AND column_name = 'origin_state'
+    ) THEN
+        ALTER TABLE products ADD COLUMN origin_state VARCHAR(255);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'products' AND column_name = 'origin_pincode'
+    ) THEN
+        ALTER TABLE products ADD COLUMN origin_pincode VARCHAR(20);
+    END IF;
+END $$;
+
 -- ============================================
 -- 4. Missing Columns - kyc_verifications table
 -- ============================================
@@ -192,7 +217,6 @@ END $$;
 -- FROM information_schema.columns 
 -- WHERE table_name = 'kyc_verifications' 
 -- AND column_name = 'id_proof_urls';
-
 
 
 
