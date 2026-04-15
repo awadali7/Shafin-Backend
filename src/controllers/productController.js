@@ -869,7 +869,6 @@ const adminUpdateProduct = async (req, res, next) => {
             extra_shipping_charge,
             shipping_zones_config,
             weight_slabs_config,
-            images,
             videos,
             tiered_pricing,
             quantity_pricing,
@@ -893,11 +892,17 @@ const adminUpdateProduct = async (req, res, next) => {
         const coverImageFile = req.files?.cover_image?.[0];
         const digitalFile = req.files?.digital_file?.[0];
         const productDetailPdfFile = req.files?.product_detail_pdf?.[0];
+        const imageFiles = req.files?.images || [];
 
         const baseUrl = process.env.BACKEND_URL || "http://localhost:5001";
         const coverImageUrl = coverImageFile
             ? `${baseUrl}/uploads/images/${coverImageFile.filename}`
             : undefined;
+
+        // Convert newly uploaded image files to URLs
+        const uploadedImageUrls = imageFiles.map(
+            (file) => `${baseUrl}/uploads/images/${file.filename}`
+        );
 
         const productDetailPdfUrl = productDetailPdfFile
             ? `${baseUrl}/uploads/pdfs/${productDetailPdfFile.filename}`
@@ -1084,15 +1089,32 @@ const adminUpdateProduct = async (req, res, next) => {
         if (origin_pincode !== undefined)
             setIfDefined("origin_pincode", origin_pincode?.trim() || null);
 
-        // Handle images array (JSONB)
-        if (images !== undefined) {
-            try {
-                const imagesJson = Array.isArray(images)
-                    ? JSON.stringify(images)
-                    : images;
-                setIfDefined("images", imagesJson);
-            } catch (e) {
-                // ignore invalid JSON
+        // Handle images: merge existing URLs to keep with newly uploaded files
+        {
+            // existing_images: JSON array of image URLs the client wants to preserve
+            const existingImagesBody = req.body.existing_images;
+            let keptUrls = [];
+            if (existingImagesBody !== undefined) {
+                try {
+                    const parsed = typeof existingImagesBody === "string"
+                        ? JSON.parse(existingImagesBody)
+                        : existingImagesBody;
+                    if (Array.isArray(parsed)) {
+                        keptUrls = parsed.filter(
+                            (img) => img && typeof img === "string" && !img.startsWith("data:")
+                        );
+                    }
+                } catch (e) {
+                    // ignore invalid JSON
+                }
+            }
+
+            const finalImageUrls = [...keptUrls, ...uploadedImageUrls];
+
+            // Only update the images column when the client explicitly sent
+            // existing_images or uploaded new files — otherwise leave DB unchanged
+            if (existingImagesBody !== undefined || uploadedImageUrls.length > 0) {
+                setIfDefined("images", JSON.stringify(finalImageUrls));
             }
         }
 
