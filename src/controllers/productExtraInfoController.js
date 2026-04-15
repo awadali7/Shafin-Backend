@@ -336,6 +336,48 @@ exports.grantAccess = async (req, res) => {
     }
 };
 
+exports.deleteProductExtraInfo = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const infoResult = await pool.query(
+            "SELECT id, title FROM product_extra_infos WHERE id = $1",
+            [id]
+        );
+        if (infoResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Extra Info package not found" });
+        }
+
+        // Remove access records first (FK constraint)
+        await pool.query(
+            "DELETE FROM product_extra_info_access WHERE product_extra_info_id = $1",
+            [id]
+        );
+
+        // Unlink the product association
+        await pool.query(
+            "UPDATE products SET product_extra_info_id = NULL WHERE product_extra_info_id = $1",
+            [id]
+        );
+
+        await pool.query("DELETE FROM product_extra_infos WHERE id = $1", [id]);
+
+        // Remove uploaded files from disk
+        const packageDir = path.join(__dirname, "../../uploads/product-extra-info", id);
+        if (fs.existsSync(packageDir)) {
+            fs.rmSync(packageDir, { recursive: true, force: true });
+        }
+
+        res.status(200).json({ success: true, message: "Extra Info package deleted successfully" });
+    } catch (error) {
+        console.error("Error deleting product extra info:", error);
+        res.status(500).json({
+            success: false,
+            message: getSchemaMismatchMessage(error) || "Error deleting product extra info",
+        });
+    }
+};
+
 exports.downloadZip = async (req, res) => {
     try {
         const { id } = req.params;

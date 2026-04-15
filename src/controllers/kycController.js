@@ -194,6 +194,13 @@ const submitKYC = async (req, res, next) => {
                 { kyc_id: result.rows[0].id }
             );
 
+            // Send pending email
+            const { sendKYCPendingEmail } = require("../config/email");
+            const userResult = await query("SELECT email, first_name FROM users WHERE id = $1", [userId]);
+            if (userResult.rows[0]?.email) {
+                await sendKYCPendingEmail(userResult.rows[0].email, userResult.rows[0].first_name, "Student KYC");
+            }
+
             return res.status(200).json({
                 success: true,
                 message: "Student KYC information updated successfully",
@@ -246,6 +253,13 @@ const submitKYC = async (req, res, next) => {
             "Your KYC information has been submitted successfully. You will be notified once it's verified (business days 9am-6pm).",
             { kyc_id: result.rows[0].id }
         );
+
+        // Send pending email
+        const { sendKYCPendingEmail } = require("../config/email");
+        const userResult = await query("SELECT email, first_name FROM users WHERE id = $1", [userId]);
+        if (userResult.rows[0]?.email) {
+            await sendKYCPendingEmail(userResult.rows[0].email, userResult.rows[0].first_name, "Student KYC");
+        }
 
         res.status(201).json({
             success: true,
@@ -358,6 +372,13 @@ const upgradeToBusiness = async (req, res, next) => {
             "Your business information has been submitted for verification. You will be notified once approved (business days 9am-6pm).",
             { kyc_id: kyc.id }
         );
+
+        // Send pending email
+        const { sendKYCPendingEmail } = require("../config/email");
+        const userResult = await query("SELECT email, first_name FROM users WHERE id = $1", [userId]);
+        if (userResult.rows[0]?.email) {
+            await sendKYCPendingEmail(userResult.rows[0].email, userResult.rows[0].first_name, "Business Upgrade");
+        }
 
         res.json({
             success: true,

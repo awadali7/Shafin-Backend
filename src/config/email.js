@@ -323,6 +323,141 @@ const sendKYCPendingEmail = async (userEmail, userName, kycType = "Student KYC")
 };
 
 /**
+ * Send Order Confirmed / Paid Email
+ */
+const sendOrderConfirmedEmail = async (userEmail, userName, orderNumber, orderTotal) => {
+    const subject = `Order Confirmed – #${orderNumber}`;
+    const frontendUrl = process.env.FRONTEND_URL || "";
+    const orderUrl = `${frontendUrl}/orders`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">✅ Order Confirmed!</h2>
+            <p>Hi ${userName},</p>
+            <p>Great news! Your order <strong>#${orderNumber}</strong> has been confirmed and payment received.</p>
+
+            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>Order Total:</strong> ₹${Number(orderTotal).toFixed(2)}</p>
+            </div>
+
+            <p>We will notify you once your order has been shipped. You can track your order status from your account.</p>
+
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${orderUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View My Orders</a>
+            </div>
+
+            <p>Thank you for shopping with us!</p>
+            <p>Best regards,<br>DiagTools India Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
+ * Send Order Shipped Email
+ */
+const sendOrderShippedEmail = async (
+    userEmail,
+    userName,
+    orderNumber,
+    trackingNumber,
+    trackingUrl,
+    estimatedDelivery,
+    courierService,
+    originCity,
+    destinationCity
+) => {
+    const subject = `Your Order #${orderNumber} Has Been Shipped!`;
+    const frontendUrl = process.env.FRONTEND_URL || "";
+    const orderUrl = `${frontendUrl}/orders`;
+    const trackingSection = trackingNumber
+        ? `
+        <div style="background-color: #cce5ff; border-left: 4px solid #004085; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>Tracking Number:</strong> ${trackingNumber}</p>
+            ${courierService ? `<p style="margin: 6px 0 0;"><strong>Courier:</strong> ${courierService}</p>` : ""}
+            ${originCity && destinationCity ? `<p style="margin: 6px 0 0;"><strong>Route:</strong> ${originCity} → ${destinationCity}</p>` : ""}
+            ${estimatedDelivery ? `<p style="margin: 6px 0 0;"><strong>Estimated Delivery:</strong> ${new Date(estimatedDelivery).toDateString()}</p>` : ""}
+            ${trackingUrl ? `<p style="margin: 12px 0 0;"><a href="${trackingUrl}" style="background-color: #004085; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px;">Track Package</a></p>` : ""}
+        </div>
+        `
+        : "";
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #004085;">📦 Your Order Has Been Shipped!</h2>
+            <p>Hi ${userName},</p>
+            <p>Your order <strong>#${orderNumber}</strong> is on its way to you.</p>
+            ${trackingSection}
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${orderUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View My Orders</a>
+            </div>
+            <p>Best regards,<br>DiagTools India Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
+ * Send Order Delivered Email
+ */
+const sendOrderDeliveredEmail = async (userEmail, userName, orderNumber) => {
+    const subject = `Your Order #${orderNumber} Has Been Delivered!`;
+    const frontendUrl = process.env.FRONTEND_URL || "";
+    const orderUrl = `${frontendUrl}/orders`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">🎉 Order Delivered!</h2>
+            <p>Hi ${userName},</p>
+            <p>Your order <strong>#${orderNumber}</strong> has been successfully delivered.</p>
+
+            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;">We hope you enjoy your purchase! If you have any issues with the delivery, please contact our support team.</p>
+            </div>
+
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${orderUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View My Orders</a>
+            </div>
+
+            <p>Thank you for shopping with us!</p>
+            <p>Best regards,<br>DiagTools India Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
+ * Send Order Status Update Email (cancelled, refunded, dispatched, or generic)
+ */
+const sendOrderStatusUpdateEmail = async (userEmail, userName, orderNumber, status) => {
+    const statusLabels = {
+        cancelled: { label: "Cancelled", color: "#dc3545", icon: "❌", bg: "#f8d7da", border: "#dc3545" },
+        refunded: { label: "Refunded", color: "#6f42c1", icon: "💰", bg: "#e8d5fb", border: "#6f42c1" },
+        dispatched: { label: "Dispatched", color: "#4763c8", icon: "🚚", bg: "#dce3fb", border: "#4763c8" },
+    };
+    const info = statusLabels[status] || { label: status.charAt(0).toUpperCase() + status.slice(1), color: "#495057", icon: "📋", bg: "#f8f9fa", border: "#6c757d" };
+
+    const subject = `Order #${orderNumber} Status Update: ${info.label}`;
+    const frontendUrl = process.env.FRONTEND_URL || "";
+    const orderUrl = `${frontendUrl}/orders`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: ${info.color};">${info.icon} Order ${info.label}</h2>
+            <p>Hi ${userName},</p>
+            <p>Your order <strong>#${orderNumber}</strong> status has been updated to <strong>${info.label}</strong>.</p>
+
+            <div style="background-color: ${info.bg}; border-left: 4px solid ${info.border}; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;">If you have any questions about your order, please contact our support team.</p>
+            </div>
+
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${orderUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View My Orders</a>
+            </div>
+
+            <p>Best regards,<br>DiagTools India Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
  * Send Product Extra Information Email
  */
 const sendProductExtraInfoEmail = async (userEmail, userName, productName, extraInfoTitle, accessUrl) => {
@@ -359,4 +494,8 @@ module.exports = {
     sendKYCRejectedEmail,
     sendKYCPendingEmail,
     sendProductExtraInfoEmail,
+    sendOrderConfirmedEmail,
+    sendOrderShippedEmail,
+    sendOrderDeliveredEmail,
+    sendOrderStatusUpdateEmail,
 };

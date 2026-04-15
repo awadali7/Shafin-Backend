@@ -3,6 +3,13 @@ const {
     calculateQuantityPrice,
     getNextPricingOption,
 } = require("../utils/pricing");
+const { createNotification } = require("./notificationController");
+const {
+    sendOrderConfirmedEmail,
+    sendOrderShippedEmail,
+    sendOrderDeliveredEmail,
+    sendOrderStatusUpdateEmail,
+} = require("../config/email");
 
 let hasOrderNumberColumnCache = null;
 
@@ -613,7 +620,12 @@ const adminMarkOrderPaid = async (req, res, next) => {
         await client.query("BEGIN");
 
         const orderRes = await client.query(
-            `SELECT id, user_id, status FROM orders WHERE id = $1`,
+            `SELECT o.id, o.user_id, o.status, o.total,
+                    COALESCE(u.first_name || ' ' || u.last_name, u.first_name, u.last_name, u.email) as user_name,
+                    u.email as user_email
+             FROM orders o
+             JOIN users u ON u.id = o.user_id
+             WHERE o.id = $1`,
             [id]
         );
         if (orderRes.rows.length === 0) {
@@ -666,6 +678,18 @@ const adminMarkOrderPaid = async (req, res, next) => {
         }
 
         await client.query("COMMIT");
+
+        // Fire-and-forget: in-app notification + email
+        const orderNumber = String(id);
+        createNotification(
+            order.user_id,
+            "order_paid",
+            "Order Confirmed",
+            `Your order #${orderNumber} has been confirmed and payment received.`,
+            { order_id: id, order_number: orderNumber }
+        ).catch(() => {});
+        sendOrderConfirmedEmail(order.user_email, order.user_name, orderNumber, order.total).catch(() => {});
+
         res.json({ success: true, message: "Order marked as paid" });
     } catch (error) {
         try {
@@ -838,7 +862,15 @@ const adminUpdateTracking = async (req, res, next) => {
             tracking_history
         } = req.body || {};
 
-        const orderRes = await client.query("SELECT status FROM orders WHERE id = $1", [id]);
+        const orderRes = await client.query(
+            `SELECT o.status, o.user_id,
+                    COALESCE(u.first_name || ' ' || u.last_name, u.first_name, u.last_name, u.email) as user_name,
+                    u.email as user_email
+             FROM orders o
+             JOIN users u ON u.id = o.user_id
+             WHERE o.id = $1`,
+            [id]
+        );
         if (orderRes.rows.length === 0) {
             await client.query("ROLLBACK");
             return res.status(404).json({
@@ -848,6 +880,9 @@ const adminUpdateTracking = async (req, res, next) => {
         }
 
         const currentStatus = orderRes.rows[0].status;
+        const orderUserId = orderRes.rows[0].user_id;
+        const orderUserName = orderRes.rows[0].user_name;
+        const orderUserEmail = orderRes.rows[0].user_email;
         let targetStatus = status !== undefined ? status : currentStatus;
 
         // Status Automation
@@ -940,6 +975,70 @@ const adminUpdateTracking = async (req, res, next) => {
         const result = await client.query(updateQuery, values);
 
         await client.query("COMMIT");
+
+        // Fire-and-forget: in-app notification + email when status changes
+        if (targetStatus !== currentStatus) {
+            const orderNumber = String(id);
+            const notificationMap = {
+                shipped: {
+                    type: "order_shipped",
+                    title: "Order Shipped",
+                    message: `Your order #${orderNumber} has been shipped.`,
+                },
+                dispatched: {
+                    type: "order_dispatched",
+                    title: "Order Dispatched",
+                    message: `Your order #${orderNumber} has been dispatched.`,
+                },
+                delivered: {
+                    type: "order_delivered",
+                    title: "Order Delivered",
+                    message: `Your order #${orderNumber} has been delivered.`,
+                },
+                cancelled: {
+                    type: "order_cancelled",
+                    title: "Order Cancelled",
+                    message: `Your order #${orderNumber} has been cancelled.`,
+                },
+                refunded: {
+                    type: "order_refunded",
+                    title: "Order Refunded",
+                    message: `Your order #${orderNumber} has been refunded.`,
+                },
+            };
+
+            const notifInfo = notificationMap[targetStatus] || {
+                type: "order_status_updated",
+                title: "Order Status Updated",
+                message: `Your order #${orderNumber} status has been updated to ${targetStatus}.`,
+            };
+
+            createNotification(
+                orderUserId,
+                notifInfo.type,
+                notifInfo.title,
+                notifInfo.message,
+                { order_id: id, order_number: orderNumber, status: targetStatus }
+            ).catch(() => {});
+
+            if (targetStatus === "shipped") {
+                sendOrderShippedEmail(
+                    orderUserEmail,
+                    orderUserName,
+                    orderNumber,
+                    tracking_number,
+                    tracking_url,
+                    estimated_delivery_date,
+                    courier_service_type,
+                    origin_city,
+                    destination_city
+                ).catch(() => {});
+            } else if (targetStatus === "delivered") {
+                sendOrderDeliveredEmail(orderUserEmail, orderUserName, orderNumber).catch(() => {});
+            } else {
+                sendOrderStatusUpdateEmail(orderUserEmail, orderUserName, orderNumber, targetStatus).catch(() => {});
+            }
+        }
 
         res.json({
             success: true,

@@ -36,6 +36,7 @@ router.get("/", authenticate, isAdmin, productExtraInfoController.getAllProductE
 router.get("/slug/:slug", authenticate, productExtraInfoController.getAccessibleProductExtraInfoBySlug);
 router.get("/:id", authenticate, isAdmin, productExtraInfoController.getProductExtraInfoById);
 router.post("/grant", express.json(), authenticate, isAdmin, productExtraInfoController.grantAccess);
+router.delete("/:id", authenticate, isAdmin, productExtraInfoController.deleteProductExtraInfo);
 router.get("/download/:id", productExtraInfoController.downloadZip);
 
 module.exports = router;

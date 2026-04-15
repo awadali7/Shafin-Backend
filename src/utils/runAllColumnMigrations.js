@@ -36,6 +36,14 @@ const migrations = [
         name: "Add product price visibility flag for KYC products",
         file: "add_product_price_visibility_for_kyc.sql",
     },
+    {
+        name: "Add order notification types",
+        file: "add_order_notification_types.sql",
+    },
+    {
+        name: "Fix orders status check constraint (add delivered)",
+        file: "update_order_status_check.sql",
+    },
 ];
 
 const verifyQueries = [
