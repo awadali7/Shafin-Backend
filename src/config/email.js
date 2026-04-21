@@ -460,7 +460,7 @@ const sendOrderStatusUpdateEmail = async (userEmail, userName, orderNumber, stat
 /**
  * Send Product Extra Information Email
  */
-const sendProductExtraInfoEmail = async (userEmail, userName, productName, extraInfoTitle, accessUrl) => {
+const sendProductExtraInfoEmail = async (userEmail, userName, productName, extraInfoTitle, ) => {
     const subject = `You got access to ${extraInfoTitle || productName || 'your product information'}`;
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

@@ -199,6 +199,29 @@ exports.getAllProductExtraInfos = async (req, res) => {
     }
 };
 
+exports.getMyProductExtraInfos = async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT pei.id, pei.title, pei.slug, pei.image_files, pei.pdf_files, peia.created_at as granted_at, peia.source
+             FROM product_extra_infos pei
+             JOIN product_extra_info_access peia ON pei.id = peia.product_extra_info_id
+             WHERE peia.user_id = $1
+             ORDER BY peia.created_at DESC`,
+            [req.user.id]
+        );
+        res.status(200).json({
+            success: true,
+            data: result.rows,
+        });
+    } catch (error) {
+        console.error("Error fetching my product extra infos:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error fetching extra information",
+        });
+    }
+};
+
 exports.getProductExtraInfoById = async (req, res) => {
     try {
         const { id } = req.params;

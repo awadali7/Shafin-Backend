@@ -33,6 +33,7 @@ router.post("/", authenticate, isAdmin, upload.fields([
 ]), productExtraInfoController.createProductExtraInfo);
 
 router.get("/", authenticate, isAdmin, productExtraInfoController.getAllProductExtraInfos);
+router.get("/my/access", authenticate, productExtraInfoController.getMyProductExtraInfos);
 router.get("/slug/:slug", authenticate, productExtraInfoController.getAccessibleProductExtraInfoBySlug);
 router.get("/:id", authenticate, isAdmin, productExtraInfoController.getProductExtraInfoById);
 router.post("/grant", express.json(), authenticate, isAdmin, productExtraInfoController.grantAccess);

@@ -13,6 +13,7 @@ router.get("/dashboard", adminController.getDashboard);
 router.get("/users", adminController.getAllUsers);
 router.get("/users/:id/login-details", adminController.getUserLoginDetails);
 router.get("/requests", adminController.getAllRequests);
+router.get("/course-purchases", adminController.getAllCoursePurchases);
 router.post("/users", adminController.createUser);
 router.put("/users/:id", adminController.updateUser);
 router.delete("/users/:id", adminController.deleteUser);

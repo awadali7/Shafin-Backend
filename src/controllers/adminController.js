@@ -909,10 +909,89 @@ const getAnnouncements = async (req, res, next) => {
     }
 };
 
+/**
+ * Get all course purchases (Admin only)
+ */
+const getAllCoursePurchases = async (req, res, next) => {
+    try {
+        const { page = 1, limit = 10, search } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        let queryText = `
+            SELECT 
+                co.id as course_order_id,
+                co.course_id,
+                co.course_name,
+                co.course_price,
+                co.created_at,
+                o.id as order_id,
+                o.status as payment_status,
+                u.id as user_id,
+                u.email as user_email,
+                u.first_name as user_first_name,
+                u.last_name as user_last_name,
+                ca.access_start,
+                ca.access_end
+            FROM course_orders co
+            JOIN orders o ON co.order_id = o.id
+            JOIN users u ON o.user_id = u.id
+            JOIN courses c ON co.course_id = c.id
+            LEFT JOIN course_access ca ON ca.user_id = u.id AND ca.course_id = co.course_id
+            WHERE 1=1
+        `;
+
+        const params = [];
+        let paramCount = 1;
+
+        if (search) {
+            queryText += ` AND (
+                u.email ILIKE $${paramCount} OR
+                u.first_name ILIKE $${paramCount} OR
+                u.last_name ILIKE $${paramCount} OR
+                co.course_name ILIKE $${paramCount}
+            )`;
+            params.push(`%${search}%`);
+            paramCount++;
+        }
+
+        // Get total count
+        const countResult = await query(
+            queryText.replace(
+                /SELECT[\s\S]*FROM/,
+                "SELECT COUNT(*) as total FROM"
+            ),
+            params
+        );
+        const total = parseInt(countResult.rows[0].total);
+
+        // Get paginated results
+        queryText += ` ORDER BY co.created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
+        params.push(parseInt(limit), offset);
+
+        const result = await query(queryText, params);
+
+        res.json({
+            success: true,
+            data: {
+                purchases: result.rows,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total,
+                    pages: Math.ceil(total / parseInt(limit)),
+                },
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getDashboard,
     getAllUsers,
     getAllRequests,
+    getAllCoursePurchases,
     createUser,
     updateUser,
     createAnnouncement,
