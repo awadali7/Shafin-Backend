@@ -328,6 +328,7 @@ CREATE TABLE IF NOT EXISTS products (
     is_coming_soon BOOLEAN DEFAULT false,
     is_contact_only BOOLEAN DEFAULT false,
     requires_kyc BOOLEAN DEFAULT false,
+    requires_kyc_multiple BOOLEAN DEFAULT false,
     show_price_before_kyc BOOLEAN DEFAULT false,
     categories JSONB DEFAULT '[]'::jsonb,
     tiered_pricing JSONB,

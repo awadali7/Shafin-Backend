@@ -37,6 +37,10 @@ const migrations = [
         file: "add_product_price_visibility_for_kyc.sql",
     },
     {
+        name: "Add product multi-quantity KYC flag",
+        file: "add_product_kyc_flags.sql",
+    },
+    {
         name: "Add order notification types",
         file: "add_order_notification_types.sql",
     },
@@ -65,6 +69,7 @@ const verifyQueries = [
             "origin_city",
             "origin_state",
             "origin_pincode",
+            "requires_kyc_multiple",
             "show_price_before_kyc",
         ],
     },
@@ -161,5 +166,4 @@ if (require.main === module) {
 module.exports = {
     runAllColumnMigrations,
 };
-
 

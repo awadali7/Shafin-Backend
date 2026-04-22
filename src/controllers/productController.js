@@ -171,6 +171,7 @@ const getAllProducts = async (req, res, next) => {
                 p.is_contact_only,
                 p.tiered_pricing,
                 p.requires_kyc,
+                p.requires_kyc_multiple,
                 p.show_price_before_kyc,
                 p.product_detail_pdf,
                 p.product_extra_info_id,
@@ -256,6 +257,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.is_contact_only,
                 p.tiered_pricing,
                 p.requires_kyc,
+                p.requires_kyc_multiple,
                 p.show_price_before_kyc,
                 p.product_detail_pdf,
                 p.product_extra_info_id,
@@ -330,6 +332,7 @@ const getProductBySlug = async (req, res, next) => {
                 is_contact_only,
                 tiered_pricing,
                 requires_kyc,
+                requires_kyc_multiple,
                 show_price_before_kyc,
                 product_detail_pdf,
                 product_extra_info_id,
@@ -412,6 +415,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 is_contact_only,
                 tiered_pricing,
                 requires_kyc,
+                requires_kyc_multiple,
                 show_price_before_kyc,
                 product_detail_pdf,
                 product_extra_info_id,
@@ -472,6 +476,7 @@ const adminCreateProduct = async (req, res, next) => {
             product_type,
             price,
             stock_quantity,
+            is_active,
             is_featured,
             rating,
             reviews_count,
@@ -479,6 +484,7 @@ const adminCreateProduct = async (req, res, next) => {
             videos,
             quantity_discounts,
             requires_kyc,
+            requires_kyc_multiple,
             show_price_before_kyc,
             weight,
             length,
@@ -687,10 +693,12 @@ const adminCreateProduct = async (req, res, next) => {
                 stock_quantity,
                 rating,
                 reviews_count,
+                is_active,
                 is_featured,
                 is_coming_soon,
                 is_contact_only,
                 requires_kyc,
+                requires_kyc_multiple,
                 show_price_before_kyc,
                 tiered_pricing,
                 product_detail_pdf,
@@ -707,7 +715,7 @@ const adminCreateProduct = async (req, res, next) => {
                 origin_state,
                 origin_pincode
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40
             )
             RETURNING
                 id,
@@ -734,6 +742,7 @@ const adminCreateProduct = async (req, res, next) => {
                 is_contact_only,
                 tiered_pricing,
                 requires_kyc,
+                requires_kyc_multiple,
                 show_price_before_kyc,
                 product_extra_info_id,
                 origin_city,
@@ -762,10 +771,12 @@ const adminCreateProduct = async (req, res, next) => {
                 type === "physical" ? toNumber(stock_quantity, 0) : null,
                 toNumber(rating, 0),
                 Math.max(0, parseInt(reviews_count || "0", 10) || 0),
+                toBoolean(is_active) ?? true,
                 toBoolean(is_featured) || false,
                 toBoolean(req.body.is_coming_soon) || false,
                 toBoolean(req.body.is_contact_only) || false,
                 toBoolean(requires_kyc) || false,
+                toBoolean(requires_kyc_multiple) || false,
                 toBoolean(show_price_before_kyc) || false,
                 // Handle tiered pricing (accepts either tiered_pricing or quantity_pricing or quantity_discounts from body)
                 (() => {
@@ -861,6 +872,7 @@ const adminUpdateProduct = async (req, res, next) => {
             is_coming_soon,
             is_contact_only,
             requires_kyc,
+            requires_kyc_multiple,
             show_price_before_kyc,
             weight,
             length,
@@ -1018,6 +1030,11 @@ const adminUpdateProduct = async (req, res, next) => {
             setIfDefined("is_contact_only", toBoolean(is_contact_only) || false);
         if (requires_kyc !== undefined)
             setIfDefined("requires_kyc", toBoolean(requires_kyc) || false);
+        if (requires_kyc_multiple !== undefined)
+            setIfDefined(
+                "requires_kyc_multiple",
+                toBoolean(requires_kyc_multiple) || false
+            );
         if (show_price_before_kyc !== undefined)
             setIfDefined(
                 "show_price_before_kyc",
@@ -1179,6 +1196,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 is_coming_soon,
                 is_contact_only,
                 requires_kyc,
+                requires_kyc_multiple,
                 show_price_before_kyc,
                 tiered_pricing,
                 product_detail_pdf,

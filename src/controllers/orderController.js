@@ -138,7 +138,7 @@ async function loadProductsForItems(client, items) {
     }
 
     const productsRes = await client.query(
-        `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing, requires_kyc, weight, volumetric_weight, extra_shipping_charge, origin_city, origin_state, origin_pincode, cover_image, slug
+        `SELECT id, name, price, product_type, stock_quantity, is_active, tiered_pricing, requires_kyc, requires_kyc_multiple, weight, volumetric_weight, extra_shipping_charge, origin_city, origin_state, origin_pincode, cover_image, slug
          FROM products
          WHERE id = ANY($1::uuid[])`,
         [ids]
@@ -321,8 +321,26 @@ const createOrder = async (req, res, next) => {
 
         const { products, byId } = loaded;
 
-        // Check if any product requires KYC
-        const hasKycProduct = products.some((p) => p.requires_kyc);
+        const alwaysKycQuantity = items.reduce((sum, item) => {
+            const product = byId.get(item.product_id);
+            if (!product?.requires_kyc) return sum;
+            const quantity =
+                product.product_type === "digital"
+                    ? 1
+                    : parseInt(item.quantity, 10) || 1;
+            return sum + quantity;
+        }, 0);
+
+        const hasBulkKycItem = items.some((item) => {
+            const product = byId.get(item.product_id);
+            const quantity =
+                product?.product_type === "digital"
+                    ? 1
+                    : parseInt(item.quantity, 10) || 1;
+            return !!product?.requires_kyc_multiple && quantity > 1;
+        });
+
+        const hasKycProduct = alwaysKycQuantity > 0 || hasBulkKycItem;
 
         if (hasKycProduct) {
             // Admins bypass KYC requirements
@@ -335,15 +353,6 @@ const createOrder = async (req, res, next) => {
             const userType = userCheck.rows[0]?.user_type;
 
             if (userRole !== "admin") {
-                // Calculate total quantity of KYC products
-                const kycQuantity = items
-                    .filter((item) => byId.get(item.product_id)?.requires_kyc)
-                    .reduce(
-                        (sum, item) =>
-                            sum + (parseInt(item.quantity) || 1),
-                        0
-                    );
-
                 // 1. Check if user has Verified Business (Product) KYC
                 const productKycCheck = await client.query(
                     `SELECT status FROM product_kyc_verifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
@@ -363,6 +372,18 @@ const createOrder = async (req, res, next) => {
                         );
                     }
                 } else {
+                    if (hasBulkKycItem) {
+                        await client.query("ROLLBACK");
+                        return res.status(403).json({
+                            success: false,
+                            message:
+                                "Business KYC verification is required to purchase more than one unit of this product.",
+                            requires_business_kyc: true,
+                            requires_business_upgrade: true,
+                            multi_quantity_kyc_required: true,
+                        });
+                    }
+
                     // Not business verified - Check for Student KYC (Single quantity only)
                     const studentKycCheck = await client.query(
                         `SELECT status FROM kyc_verifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
@@ -384,7 +405,7 @@ const createOrder = async (req, res, next) => {
                     }
 
                     // Student is verified - Check quantity
-                    if (kycQuantity > 1) {
+                    if (alwaysKycQuantity > 1) {
                         await client.query("ROLLBACK");
                         return res.status(403).json({
                             success: false,
