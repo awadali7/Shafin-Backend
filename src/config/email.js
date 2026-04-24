@@ -115,6 +115,47 @@ const sendCourseAccessApprovedEmail = async (
 };
 
 /**
+ * Send course purchase success email
+ */
+const sendCoursePurchaseSuccessEmail = async (
+    userEmail,
+    userName,
+    courseName,
+    orderNumber,
+    accessEnd
+) => {
+    const subject = `Course Purchase Confirmed: ${courseName}`;
+    const frontendUrl = process.env.FRONTEND_URL || "";
+    const coursesUrl = `${frontendUrl}/courses`;
+    const accessText = accessEnd
+        ? `Your access is active until ${new Date(accessEnd).toLocaleDateString()}.`
+        : "Your access is now active.";
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">Course Purchase Confirmed!</h2>
+            <p>Hi ${userName},</p>
+            <p>Your payment for <strong>${courseName}</strong> has been received successfully.</p>
+
+            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>Order ID:</strong> ${orderNumber}</p>
+                <p style="margin: 8px 0 0;">${accessText}</p>
+            </div>
+
+            <p>You can now start learning right away from your course library.</p>
+
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${coursesUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Browse My Courses</a>
+            </div>
+
+            <p>Best regards,<br>DiagTools India Team</p>
+        </div>
+    `;
+
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
  * Send course access rejected email
  */
 const sendCourseAccessRejectedEmail = async (
@@ -460,7 +501,13 @@ const sendOrderStatusUpdateEmail = async (userEmail, userName, orderNumber, stat
 /**
  * Send Product Extra Information Email
  */
-const sendProductExtraInfoEmail = async (userEmail, userName, productName, extraInfoTitle, ) => {
+const sendProductExtraInfoEmail = async (
+    userEmail,
+    userName,
+    productName,
+    extraInfoTitle,
+    accessUrl
+) => {
     const subject = `You got access to ${extraInfoTitle || productName || 'your product information'}`;
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -487,6 +534,7 @@ module.exports = {
     sendEmail,
     sendWelcomeEmail,
     sendCourseAccessApprovedEmail,
+    sendCoursePurchaseSuccessEmail,
     sendCourseAccessRejectedEmail,
     sendPasswordResetEmail,
     sendMultipleDeviceWarningEmail,

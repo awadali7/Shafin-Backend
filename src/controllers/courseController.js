@@ -1,4 +1,5 @@
 const { query, getClient } = require("../config/database");
+const { sendCourseAccessApprovedEmail } = require("../config/email");
 const { generateSlug, normalizeImageUrl } = require("../utils/helpers");
 const path = require("path");
 const fs = require("fs");
@@ -643,6 +644,17 @@ const grantCourseAccess = async (req, res, next) => {
                 access_end: access_end,
             }
         ).catch((err) => console.error("Failed to create notification:", err));
+
+        sendCourseAccessApprovedEmail(
+            user.email,
+            `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+                user.email,
+            course.name,
+            access_start,
+            access_end
+        ).catch((err) =>
+            console.error("Failed to send course access approval email:", err)
+        );
 
         res.json({
             success: true,

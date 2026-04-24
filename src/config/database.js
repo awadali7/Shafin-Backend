@@ -54,7 +54,7 @@ const ensureRequiredSchema = async () => {
             `);
             await pool.query(`
                 ALTER TABLE products
-                ADD COLUMN IF NOT EXISTS requires_kyc_multiple BOOLEAN DEFAULT false
+                ADD COLUMN IF NOT EXISTS requires_kyc_multiple BOOLEAN DEFAULT false2
             `);
         })().catch((error) => {
             schemaReadyPromise = null;

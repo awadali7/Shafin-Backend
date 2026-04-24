@@ -94,11 +94,15 @@ const getAllProducts = async (req, res, next) => {
 
         // Filter by category path (hierarchical) or single category (backward compatibility)
         if (categoryPath && Array.isArray(categoryPath) && categoryPath.length > 0) {
-            // Hierarchical category path filtering
-            // Check if product's categories array starts with the selected path
-            where.push(`p.categories @> $${i}::jsonb`);
-            params.push(JSON.stringify(categoryPath));
-            i++;
+            // Hierarchical category path filtering.
+            // Match each selected level by array index so the path behaves like a prefix.
+            const pathConditions = categoryPath.map((cat, index) => {
+                params.push(cat);
+                const condition = `p.categories->>${index} = $${i}`;
+                i++;
+                return condition;
+            });
+            where.push(`(${pathConditions.join(" AND ")})`);
         } else if (category && category.toLowerCase() !== "all") {
             // Backward compatibility: single category filter
             where.push(`p.categories @> $${i}::jsonb`);

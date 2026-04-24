@@ -2,7 +2,10 @@ const crypto = require("crypto");
 const { getClient } = require("../config/database");
 const { getRazorpayClient } = require("../config/razorpay");
 const { createNotification } = require("./notificationController");
-const { sendProductExtraInfoEmail } = require("../config/email");
+const {
+    sendCoursePurchaseSuccessEmail,
+    sendProductExtraInfoEmail,
+} = require("../config/email");
 
 function toPaise(amountInRupees) {
     const n = Number(amountInRupees);
@@ -270,7 +273,7 @@ const verifyRazorpayPayment = async (req, res, next) => {
         await client.query("BEGIN");
 
         const orderRes = await client.query(
-            `SELECT id, user_id, status, payment_reference
+            `SELECT id, user_id, status, payment_reference, total
              FROM orders
              WHERE id = $1
              LIMIT 1`,
@@ -417,6 +420,33 @@ const verifyRazorpayPayment = async (req, res, next) => {
             ).catch((err) =>
                 console.error("Failed to create purchase notification:", err)
             );
+
+            try {
+                const userRes = await client.query(
+                    `SELECT email, first_name, last_name FROM users WHERE id = $1`,
+                    [order.user_id]
+                );
+                const user = userRes.rows[0];
+                const userName =
+                    `${user?.first_name || ""} ${user?.last_name || ""}`.trim() ||
+                    user?.email ||
+                    "Customer";
+
+                if (user?.email) {
+                    await sendCoursePurchaseSuccessEmail(
+                        user.email,
+                        userName,
+                        courseName,
+                        String(order.id),
+                        accessEnd.toISOString()
+                    );
+                }
+            } catch (err) {
+                console.error(
+                    "Failed to send course purchase confirmation email:",
+                    err
+                );
+            }
         } else {
             // This is a product order - grant digital entitlements
             await grantDigitalEntitlementsForOrder(
@@ -667,6 +697,33 @@ const razorpayWebhook = async (req, res, next) => {
                             err
                         )
                     );
+
+                    try {
+                        const userRes = await client.query(
+                            `SELECT email, first_name, last_name FROM users WHERE id = $1`,
+                            [order.user_id]
+                        );
+                        const user = userRes.rows[0];
+                        const userName =
+                            `${user?.first_name || ""} ${user?.last_name || ""}`.trim() ||
+                            user?.email ||
+                            "Customer";
+
+                        if (user?.email) {
+                            await sendCoursePurchaseSuccessEmail(
+                                user.email,
+                                userName,
+                                courseName,
+                                String(order.id),
+                                accessEnd.toISOString()
+                            );
+                        }
+                    } catch (err) {
+                        console.error(
+                            "Failed to send course purchase confirmation email:",
+                            err
+                        );
+                    }
                 } else {
                     // This is a product order - grant digital entitlements
                     await grantDigitalEntitlementsForOrder(
