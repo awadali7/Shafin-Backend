@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS product_kyc_verifications (
     -- Documents (JSONB arrays for multiple files)
     id_proofs JSONB NOT NULL DEFAULT '[]'::jsonb,  -- Minimum 2 personal IDs (Aadhaar, PAN, Passport, etc.)
     business_proofs JSONB DEFAULT '[]'::jsonb,     -- Business documents (GST, Shop license, etc.) - optional
+    back_side_id_proof_url TEXT,                   -- Back side of ID proof
+    signature_url TEXT,                            -- Signature image/document
     
     -- Status Tracking
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected')),
@@ -74,5 +76,6 @@ ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
 COMMENT ON TABLE product_kyc_verifications IS 'KYC verification for product purchases';
 COMMENT ON COLUMN product_kyc_verifications.id_proofs IS 'Array of personal ID proof URLs (minimum 2 required)';
 COMMENT ON COLUMN product_kyc_verifications.business_proofs IS 'Array of business proof URLs (optional)';
-
+COMMENT ON COLUMN product_kyc_verifications.back_side_id_proof_url IS 'Back side ID proof URL';
+COMMENT ON COLUMN product_kyc_verifications.signature_url IS 'Signature upload URL';
 

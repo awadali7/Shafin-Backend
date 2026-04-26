@@ -125,4 +125,12 @@ router.post(
     courseController.grantCourseAccess
 );
 
+router.post(
+    "/:id/revoke-access",
+    authenticate,
+    isAdmin,
+    express.json(),
+    courseController.revokeCourseAccess
+);
+
 module.exports = router;

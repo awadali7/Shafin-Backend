@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS product_kyc_verifications (
     -- Documents (JSONB arrays for multiple files)
     id_proofs JSONB NOT NULL DEFAULT '[]'::jsonb,
     business_proofs JSONB DEFAULT '[]'::jsonb,
+    back_side_id_proof_url TEXT,
+    signature_url TEXT,
     
     -- Status Tracking
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected')),
@@ -95,6 +97,18 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                    WHERE table_name='product_kyc_verifications' AND column_name='business_proofs') THEN
         ALTER TABLE product_kyc_verifications ADD COLUMN business_proofs JSONB DEFAULT '[]'::jsonb;
+    END IF;
+
+    -- Check and add back_side_id_proof_url
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name='product_kyc_verifications' AND column_name='back_side_id_proof_url') THEN
+        ALTER TABLE product_kyc_verifications ADD COLUMN back_side_id_proof_url TEXT;
+    END IF;
+
+    -- Check and add signature_url
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name='product_kyc_verifications' AND column_name='signature_url') THEN
+        ALTER TABLE product_kyc_verifications ADD COLUMN signature_url TEXT;
     END IF;
 
     -- Check and add status
@@ -166,5 +180,4 @@ AND table_name = 'product_kyc_verifications'
 ORDER BY ordinal_position;
 
 SELECT 'Installation complete!' as status;
-
 

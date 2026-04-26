@@ -141,15 +141,15 @@ const formatVideoEmbedUrl = (url) => {
 
 /**
  * Get public URL for uploads/assets
- * Uses PUBLIC_URL if set, otherwise FRONTEND_URL, otherwise BACKEND_URL
- * This ensures uploads are accessible via the public domain
+ * Uses PUBLIC_URL if set, otherwise BACKEND_URL, otherwise FRONTEND_URL
+ * Upload files are served by the backend, so BACKEND_URL must win over FRONTEND_URL
  */
 const getPublicUrl = () => {
-    // Priority: PUBLIC_URL > FRONTEND_URL > BACKEND_URL > default
+    // Priority: PUBLIC_URL > BACKEND_URL > FRONTEND_URL > default
     let url = 
         process.env.PUBLIC_URL ||
-        process.env.FRONTEND_URL ||
         process.env.BACKEND_URL ||
+        process.env.FRONTEND_URL ||
         (process.env.NODE_ENV === "production"
             ? "https://www.diagtools.in"
             : "http://localhost:5001");

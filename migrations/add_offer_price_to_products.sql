@@ -1,0 +1,2 @@
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS offer_price DECIMAL(10,2);

@@ -51,6 +51,8 @@ const upload = multer({
 const uploadFields = upload.fields([
     { name: "id_proofs", maxCount: 10 }, // Allow up to 10 ID proofs
     { name: "business_proofs", maxCount: 10 }, // Business proofs (REQUIRED)
+    { name: "back_side_id_proof", maxCount: 1 },
+    { name: "signature", maxCount: 1 },
 ]);
 
 /**
@@ -61,6 +63,10 @@ const submitProductKYC = async (req, res, next) => {
         const userId = req.user.id;
         const { full_name, address, contact_number, whatsapp_number } =
             req.body;
+        const uploadedIdProofFiles = req.files?.id_proofs || [];
+        const uploadedBusinessProofFiles = req.files?.business_proofs || [];
+        const uploadedBackSideIdProof = req.files?.back_side_id_proof?.[0];
+        const uploadedSignature = req.files?.signature?.[0];
 
         // Validation
         if (!full_name || !address || !contact_number || !whatsapp_number) {
@@ -71,45 +77,68 @@ const submitProductKYC = async (req, res, next) => {
             });
         }
 
-        // Check if files are uploaded
-        if (
-            !req.files ||
-            !req.files.id_proofs ||
-            req.files.id_proofs.length < 2
-        ) {
+        // Check if user already has a Product KYC record
+        const existingKYC = await query(
+            `SELECT id, status, id_proofs, business_proofs, back_side_id_proof_url,
+                    signature_url
+             FROM product_kyc_verifications
+             WHERE user_id = $1`,
+            [userId]
+        );
+
+        const existingRecord = existingKYC.rows[0];
+        const existingIdProofs = existingRecord?.id_proofs || [];
+        const existingBusinessProofs = existingRecord?.business_proofs || [];
+        const existingBackSideIdProof =
+            existingRecord?.back_side_id_proof_url || null;
+        const existingSignature = existingRecord?.signature_url || null;
+
+        const idProofUrls =
+            uploadedIdProofFiles.length > 0
+                ? uploadedIdProofFiles.map(
+                      (file) => `/uploads/product-kyc/${file.filename}`
+                  )
+                : existingIdProofs;
+        const businessProofUrls =
+            uploadedBusinessProofFiles.length > 0
+                ? uploadedBusinessProofFiles.map(
+                      (file) => `/uploads/product-kyc/${file.filename}`
+                  )
+                : existingBusinessProofs;
+        const backSideIdProofUrl = uploadedBackSideIdProof
+            ? `/uploads/product-kyc/${uploadedBackSideIdProof.filename}`
+            : existingBackSideIdProof;
+        const signatureUrl = uploadedSignature
+            ? `/uploads/product-kyc/${uploadedSignature.filename}`
+            : existingSignature;
+
+        if (idProofUrls.length < 2) {
             return res.status(400).json({
                 success: false,
                 message: "At least 2 ID proof documents are required",
             });
         }
 
-        // Business proof is now REQUIRED
-        if (
-            !req.files.business_proofs ||
-            req.files.business_proofs.length < 1
-        ) {
+        if (businessProofUrls.length < 1) {
             return res.status(400).json({
                 success: false,
                 message: "At least 1 Business proof document is required",
             });
         }
 
-        const idProofFiles = req.files.id_proofs; // Array of files
-        const businessProofFiles = req.files.business_proofs; // REQUIRED
+        if (!backSideIdProofUrl) {
+            return res.status(400).json({
+                success: false,
+                message: "Back side ID proof document is required",
+            });
+        }
 
-        // Generate file URLs
-        const idProofUrls = idProofFiles.map(
-            (file) => `/uploads/product-kyc/${file.filename}`
-        );
-        const businessProofUrls = businessProofFiles.map(
-            (file) => `/uploads/product-kyc/${file.filename}`
-        );
-
-        // Check if user already has a Product KYC record
-        const existingKYC = await query(
-            "SELECT id, status, id_proofs, business_proofs FROM product_kyc_verifications WHERE user_id = $1",
-            [userId]
-        );
+        if (!signatureUrl) {
+            return res.status(400).json({
+                success: false,
+                message: "Signature document is required",
+            });
+        }
 
         if (existingKYC.rows.length > 0) {
             const kyc = existingKYC.rows[0];
@@ -124,10 +153,21 @@ const submitProductKYC = async (req, res, next) => {
 
             // If pending or rejected, update the record
             // Delete old files if they exist
-            const oldIdProofs = kyc.id_proofs || [];
-            const oldBusinessProofs = kyc.business_proofs || [];
+            const filesToDelete = [];
+            if (uploadedIdProofFiles.length > 0) {
+                filesToDelete.push(...(kyc.id_proofs || []));
+            }
+            if (uploadedBusinessProofFiles.length > 0) {
+                filesToDelete.push(...(kyc.business_proofs || []));
+            }
+            if (uploadedBackSideIdProof && kyc.back_side_id_proof_url) {
+                filesToDelete.push(kyc.back_side_id_proof_url);
+            }
+            if (uploadedSignature && kyc.signature_url) {
+                filesToDelete.push(kyc.signature_url);
+            }
 
-            [...oldIdProofs, ...oldBusinessProofs].forEach((url) => {
+            filesToDelete.forEach((url) => {
                 const filePath = path.join(__dirname, "../../", url);
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
@@ -147,10 +187,11 @@ const submitProductKYC = async (req, res, next) => {
                 `UPDATE product_kyc_verifications 
                  SET full_name = $1, address = $2, contact_number = $3, 
                      whatsapp_number = $4, id_proofs = $5, business_proofs = $6,
+                     back_side_id_proof_url = $7, signature_url = $8,
                      status = 'pending', rejection_reason = NULL,
                      verified_by = NULL, verified_at = NULL,
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE user_id = $7
+                 WHERE user_id = $9
                  RETURNING *`,
                 [
                     full_name,
@@ -159,6 +200,8 @@ const submitProductKYC = async (req, res, next) => {
                     whatsapp_number,
                     JSON.stringify(idProofUrls),
                     JSON.stringify(businessProofUrls),
+                    backSideIdProofUrl,
+                    signatureUrl,
                     userId,
                 ]
             );
@@ -182,8 +225,9 @@ const submitProductKYC = async (req, res, next) => {
         const result = await query(
             `INSERT INTO product_kyc_verifications 
              (user_id, full_name, address, contact_number, whatsapp_number, 
-              id_proofs, business_proofs, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+              id_proofs, business_proofs, back_side_id_proof_url, signature_url,
+              status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
              RETURNING *`,
             [
                 userId,
@@ -193,6 +237,8 @@ const submitProductKYC = async (req, res, next) => {
                 whatsapp_number,
                 JSON.stringify(idProofUrls),
                 JSON.stringify(businessProofUrls),
+                backSideIdProofUrl,
+                signatureUrl,
             ]
         );
 
@@ -231,7 +277,8 @@ const getMyProductKYC = async (req, res, next) => {
         const result = await query(
             `SELECT 
                 id, full_name, address, contact_number, whatsapp_number,
-                id_proofs, business_proofs, status, rejection_reason,
+                id_proofs, business_proofs, back_side_id_proof_url, signature_url,
+                status, rejection_reason,
                 verified_at, created_at, updated_at
              FROM product_kyc_verifications 
              WHERE user_id = $1`,
@@ -266,7 +313,8 @@ const getAllProductKYC = async (req, res, next) => {
         let queryText = `
             SELECT 
                 k.id, k.full_name, k.address, k.contact_number, k.whatsapp_number,
-                k.id_proofs, k.business_proofs, k.status, k.rejection_reason,
+                k.id_proofs, k.business_proofs, k.back_side_id_proof_url,
+                k.signature_url, k.status, k.rejection_reason,
                 k.verified_by, k.verified_at, k.created_at, k.updated_at,
                 u.id as user_id, u.email as user_email,
                 u.first_name as user_first_name, u.last_name as user_last_name,
@@ -325,7 +373,8 @@ const getProductKYCById = async (req, res, next) => {
         const result = await query(
             `SELECT 
                 k.id, k.full_name, k.address, k.contact_number, k.whatsapp_number,
-                k.id_proofs, k.business_proofs, k.status, k.rejection_reason,
+                k.id_proofs, k.business_proofs, k.back_side_id_proof_url,
+                k.signature_url, k.status, k.rejection_reason,
                 k.verified_by, k.verified_at, k.created_at, k.updated_at,
                 u.id as user_id, u.email as user_email,
                 u.first_name as user_first_name, u.last_name as user_last_name,
@@ -491,4 +540,3 @@ module.exports = {
     getProductKYCStatus,
     uploadFields, // Export upload middleware
 };
-

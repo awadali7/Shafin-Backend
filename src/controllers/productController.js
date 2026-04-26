@@ -159,6 +159,7 @@ const getAllProducts = async (req, res, next) => {
                 p.malayalam_description,
                 p.hindi_description,
                 p.price,
+                p.offer_price,
                 p.category,
                 p.categories,
                 p.product_type,
@@ -245,6 +246,7 @@ const getFeaturedProducts = async (req, res, next) => {
                 p.malayalam_description,
                 p.hindi_description,
                 p.price,
+                p.offer_price,
                 p.category,
                 p.categories,
                 p.product_type,
@@ -320,6 +322,7 @@ const getProductBySlug = async (req, res, next) => {
                 malayalam_description,
                 hindi_description,
                 price,
+                offer_price,
                 category,
                 categories,
                 product_type,
@@ -403,6 +406,7 @@ const adminGetAllProducts = async (req, res, next) => {
                 malayalam_description,
                 hindi_description,
                 price,
+                offer_price,
                 category,
                 categories,
                 product_type,
@@ -479,6 +483,7 @@ const adminCreateProduct = async (req, res, next) => {
             categories,
             product_type,
             price,
+            offer_price,
             stock_quantity,
             is_active,
             is_featured,
@@ -685,6 +690,7 @@ const adminCreateProduct = async (req, res, next) => {
                 malayalam_description,
                 hindi_description,
                 price,
+                offer_price,
                 category,
                 categories,
                 product_type,
@@ -719,7 +725,7 @@ const adminCreateProduct = async (req, res, next) => {
                 origin_state,
                 origin_pincode
             ) VALUES (
-                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41
             )
             RETURNING
                 id,
@@ -730,6 +736,7 @@ const adminCreateProduct = async (req, res, next) => {
                 malayalam_description,
                 hindi_description,
                 price,
+                offer_price,
                 category,
                 categories,
                 product_type,
@@ -763,6 +770,7 @@ const adminCreateProduct = async (req, res, next) => {
                 malayalam_description,
                 hindi_description,
                 toNumber(price, 0),
+                toNumber(offer_price, 0) > 0 ? toNumber(offer_price, 0) : null,
                 categoriesArray.length > 0 ? categoriesArray[0] : null, // First category for backward compatibility
                 categoriesJson,
                 type,
@@ -868,6 +876,7 @@ const adminUpdateProduct = async (req, res, next) => {
             product_type,
             type,
             price,
+            offer_price,
             stock_quantity,
             rating,
             reviews_count,
@@ -1020,6 +1029,12 @@ const adminUpdateProduct = async (req, res, next) => {
 
         setIfDefined("product_type", nextType);
         if (price !== undefined) setIfDefined("price", toNumber(price, 0));
+        if (offer_price !== undefined) {
+            setIfDefined(
+                "offer_price",
+                toNumber(offer_price, 0) > 0 ? toNumber(offer_price, 0) : null
+            );
+        }
         if (rating !== undefined) setIfDefined("rating", toNumber(rating, 0));
         if (reviews_count !== undefined)
             setIfDefined(
@@ -1185,6 +1200,7 @@ const adminUpdateProduct = async (req, res, next) => {
                 malayalam_description,
                 hindi_description,
                 price,
+                offer_price,
                 category,
                 categories,
                 product_type,

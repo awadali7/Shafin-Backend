@@ -544,6 +544,8 @@ CREATE TABLE IF NOT EXISTS product_kyc_verifications (
     whatsapp_number VARCHAR(20) NOT NULL,
     id_proofs JSONB DEFAULT '[]'::jsonb,
     business_proofs JSONB DEFAULT '[]'::jsonb,
+    back_side_id_proof_url TEXT,
+    signature_url TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected')),
     rejection_reason TEXT,
     verified_by UUID REFERENCES users(id),

@@ -669,6 +669,87 @@ const grantCourseAccess = async (req, res, next) => {
     }
 };
 
+/**
+ * Revoke course access from a user (Admin only)
+ */
+const revokeCourseAccess = async (req, res, next) => {
+    const client = await getClient();
+    try {
+        const { id: courseId } = req.params;
+        const { user_id } = req.body;
+
+        if (!user_id) {
+            return res.status(400).json({
+                success: false,
+                message: "user_id is required",
+            });
+        }
+
+        await client.query("BEGIN");
+
+        const courseCheck = await client.query(
+            "SELECT id, name FROM courses WHERE id = $1 AND is_active = true",
+            [courseId]
+        );
+
+        if (courseCheck.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({
+                success: false,
+                message: "Course not found",
+            });
+        }
+
+        const userCheck = await client.query(
+            "SELECT id, email, first_name, last_name FROM users WHERE id = $1",
+            [user_id]
+        );
+
+        if (userCheck.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        const accessResult = await client.query(
+            `UPDATE course_access
+             SET is_active = false,
+                 access_end = LEAST(access_end, CURRENT_TIMESTAMP)
+             WHERE user_id = $1
+             AND course_id = $2
+             AND is_active = true
+             AND access_end > CURRENT_TIMESTAMP
+             RETURNING id`,
+            [user_id, courseId]
+        );
+
+        if (accessResult.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({
+                success: false,
+                message: "No active course access found for this user",
+            });
+        }
+
+        await client.query("COMMIT");
+
+        res.json({
+            success: true,
+            message: "Course access removed successfully",
+            data: {
+                revoked_count: accessResult.rows.length,
+            },
+        });
+    } catch (error) {
+        await client.query("ROLLBACK");
+        next(error);
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     getAllCourses,
     getFeaturedCourses,
@@ -678,4 +759,5 @@ module.exports = {
     deleteCourse,
     purchaseCourse,
     grantCourseAccess,
+    revokeCourseAccess,
 };
