@@ -2,6 +2,7 @@ const { query, getClient } = require("../config/database");
 const {
     calculateQuantityPrice,
     getNextPricingOption,
+    getPincodeZoneHint,
 } = require("../utils/pricing");
 const { createNotification } = require("./notificationController");
 const {
@@ -23,47 +24,75 @@ function normalizeLocationValue(value) {
     return String(value || "").trim().toLowerCase();
 }
 
-function getShippingZone(originCity, originState, customer = {}) {
-    const customerCity = normalizeLocationValue(customer.city);
-    const customerState = normalizeLocationValue(customer.state);
-    const normalizedOriginCity = normalizeLocationValue(originCity);
-    const normalizedOriginState = normalizeLocationValue(originState);
+function getShippingZone(customerCity, customerState, customerPincode, originCity, originState, originPincode) {
+    const normCustomerCity    = normalizeLocationValue(customerCity);
+    const normCustomerState   = normalizeLocationValue(customerState);
+    const normOriginCity      = normalizeLocationValue(originCity);
+    const normOriginState     = normalizeLocationValue(originState);
+    const normCustomerPincode = normalizeLocationValue(customerPincode);
+    const normOriginPincode   = normalizeLocationValue(originPincode);
 
-    if (customerCity && normalizedOriginCity && customerCity === normalizedOriginCity) {
-        return "local";
+    // Zone A: same pincode or same city
+    if (
+        (normCustomerPincode && normOriginPincode && normCustomerPincode === normOriginPincode) ||
+        (normCustomerCity && normOriginCity && normCustomerCity === normOriginCity)
+    ) {
+        return 'A';
     }
 
-    if (customerState && normalizedOriginState && customerState === normalizedOriginState) {
-        return "regional";
+    // Zone B: same state
+    if (normCustomerState && normOriginState && normCustomerState === normOriginState) {
+        return 'B';
     }
 
-    return "national";
+    const customerHint = getPincodeZoneHint(customerPincode);
+    const originHint   = getPincodeZoneHint(originPincode);
+
+    // Zone F: either end is remote (J&K, Ladakh, Himachal remote, A&N, Lakshadweep)
+    if (customerHint === 'remote' || originHint === 'remote') {
+        return 'F';
+    }
+
+    // Zone E: either end is northeast
+    if (customerHint === 'northeast' || originHint === 'northeast') {
+        return 'E';
+    }
+
+    // Zone C: both ends are metro
+    if (customerHint === 'metro' && originHint === 'metro') {
+        return 'C';
+    }
+
+    // Zone D: rest of India
+    return 'D';
 }
 
 function getZoneRateConfig(settings, zone) {
-    if (zone === "local") {
+    if (zone === "A") {
         return {
-            baseWeight: Number(settings.local_base_weight || 1000),
-            baseRate: Number(settings.local_base_rate || 50),
+            baseWeight:       Number(settings.local_base_weight       || 1000),
+            baseRate:         Number(settings.local_base_rate         || 50),
             additionalWeight: Number(settings.local_additional_weight || 1000),
-            additionalRate: Number(settings.local_additional_rate || 40),
+            additionalRate:   Number(settings.local_additional_rate   || 40),
         };
     }
 
-    if (zone === "regional") {
+    if (zone === "B") {
         return {
-            baseWeight: Number(settings.regional_base_weight || 1000),
-            baseRate: Number(settings.regional_base_rate || 70),
+            baseWeight:       Number(settings.regional_base_weight       || 1000),
+            baseRate:         Number(settings.regional_base_rate         || 70),
             additionalWeight: Number(settings.regional_additional_weight || 1000),
-            additionalRate: Number(settings.regional_additional_rate || 60),
+            additionalRate:   Number(settings.regional_additional_rate   || 60),
         };
     }
 
+    // Zones C, D, E, F all use the national rate config.
+    // Add zone_c_*, zone_e_*, zone_f_* rows to site_settings to differentiate later.
     return {
-        baseWeight: Number(settings.national_base_weight || 1000),
-        baseRate: Number(settings.national_base_rate || 100),
+        baseWeight:       Number(settings.national_base_weight       || 1000),
+        baseRate:         Number(settings.national_base_rate         || 100),
         additionalWeight: Number(settings.national_additional_weight || 1000),
-        additionalRate: Number(settings.national_additional_rate || 90),
+        additionalRate:   Number(settings.national_additional_rate   || 90),
     };
 }
 
@@ -116,7 +145,7 @@ async function getOrderNumberSelect(alias = "") {
 
 async function getShippingSettings(client) {
     const settingsRes = await client.query(
-        "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('shipping_origin_city', 'shipping_origin_state', 'local_base_weight', 'local_base_rate', 'local_additional_weight', 'local_additional_rate', 'regional_base_weight', 'regional_base_rate', 'regional_additional_weight', 'regional_additional_rate', 'national_base_weight', 'national_base_rate', 'national_additional_weight', 'national_additional_rate')"
+        "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('shipping_origin_city', 'shipping_origin_state', 'shipping_origin_pincode', 'local_base_weight', 'local_base_rate', 'local_additional_weight', 'local_additional_rate', 'regional_base_weight', 'regional_base_rate', 'regional_additional_weight', 'regional_additional_rate', 'national_base_weight', 'national_base_rate', 'national_additional_weight', 'national_additional_rate')"
     );
     const settings = {};
     settingsRes.rows.forEach((r) => (settings[r.setting_key] = r.setting_value));
@@ -151,8 +180,9 @@ async function loadProductsForItems(client, items) {
 }
 
 function buildOrderPricingQuote(items, customer, byId, settings) {
-    const defaultOriginCity = settings.shipping_origin_city || "Ernakulam";
-    const defaultOriginState = settings.shipping_origin_state || "Kerala";
+    const defaultOriginCity    = settings.shipping_origin_city    || "Ernakulam";
+    const defaultOriginState   = settings.shipping_origin_state   || "Kerala";
+    const defaultOriginPincode = settings.shipping_origin_pincode || "";
 
     let itemsSubtotal = 0;
     let totalDiscount = 0;
@@ -169,16 +199,21 @@ function buildOrderPricingQuote(items, customer, byId, settings) {
         const extraShippingCharge = Number(p.extra_shipping_charge ?? 0);
         const chargeableWeight = Math.max(weight, volWeight);
 
-        const itemOriginCity = p.origin_city || defaultOriginCity;
-        const itemOriginState = p.origin_state || defaultOriginState;
+        const itemOriginCity    = p.origin_city    || defaultOriginCity;
+        const itemOriginState   = p.origin_state   || defaultOriginState;
+        const itemOriginPincode = p.origin_pincode || defaultOriginPincode;
         const originKey = `${itemOriginCity}_${itemOriginState}`.toLowerCase();
-        const zone = getShippingZone(itemOriginCity, itemOriginState, customer);
+        const zone = getShippingZone(
+            customer.city, customer.state, customer.pincode,
+            itemOriginCity, itemOriginState, itemOriginPincode
+        );
 
         if (!originGroups[originKey]) {
             originGroups[originKey] = {
                 key: originKey,
                 origin_city: itemOriginCity,
                 origin_state: itemOriginState,
+                origin_pincode: itemOriginPincode,
                 zone,
                 totalWeight: 0,
                 slabCost: 0,
@@ -199,7 +234,9 @@ function buildOrderPricingQuote(items, customer, byId, settings) {
 
         itemsSubtotal += pricingInfo.itemsTotal;
         totalDiscount += pricingInfo.savings;
-        totalShippingCost += pricingInfo.courierCharge * quantity;
+        if (p.product_type === "physical") {
+            totalShippingCost += pricingInfo.courierCharge * quantity;
+        }
 
         itemsWithPricing.push({
             product_id: p.id,
@@ -211,7 +248,7 @@ function buildOrderPricingQuote(items, customer, byId, settings) {
             unit_price: basePrice,
             line_total: toMoney(pricingInfo.itemsTotal),
             price_per_item: toMoney(pricingInfo.pricePerItem),
-            courier_charge: toMoney(pricingInfo.courierCharge * quantity),
+            courier_charge: p.product_type === "physical" ? toMoney(pricingInfo.courierCharge * quantity) : 0,
             origin_city: itemOriginCity,
             origin_state: itemOriginState,
             zone,
@@ -278,6 +315,23 @@ const getOrderQuote = async (req, res, next) => {
                 return res.status(400).json({
                     success: false,
                     message: `Not enough stock for ${p.name}`,
+                });
+            }
+        }
+
+        const hasPhysicalProduct = items.some((item) => {
+            const p = byId.get(item.product_id);
+            return p && p.product_type === "physical";
+        });
+
+        if (hasPhysicalProduct) {
+            const city    = normalizeLocationValue(customer?.city);
+            const state   = normalizeLocationValue(customer?.state);
+            const pincode = String(customer?.pincode || "").trim();
+            if (!city || !state || !/^\d{6}$/.test(pincode)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "City, state, and pincode are required for all physical product shipping quotes.",
                 });
             }
         }
@@ -1084,4 +1138,7 @@ module.exports = {
     adminGetAllOrders,
     adminGetOrderById,
     adminUpdateTracking,
+    // exported for unit testing
+    getShippingZone,
+    buildOrderPricingQuote,
 };
