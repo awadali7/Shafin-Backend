@@ -37,6 +37,7 @@ router.get("/my/access", authenticate, productExtraInfoController.getMyProductEx
 router.get("/slug/:slug", authenticate, productExtraInfoController.getAccessibleProductExtraInfoBySlug);
 router.get("/:id", authenticate, isAdmin, productExtraInfoController.getProductExtraInfoById);
 router.post("/grant", express.json(), authenticate, isAdmin, productExtraInfoController.grantAccess);
+router.post("/remove-access", express.json(), authenticate, isAdmin, productExtraInfoController.removeAccess);
 router.delete("/:id", authenticate, isAdmin, productExtraInfoController.deleteProductExtraInfo);
 router.get("/download/:id", productExtraInfoController.downloadZip);
 

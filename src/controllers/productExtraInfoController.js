@@ -359,6 +359,35 @@ exports.grantAccess = async (req, res) => {
     }
 };
 
+exports.removeAccess = async (req, res) => {
+    try {
+        const { product_extra_info_id, user_id } = req.body;
+
+        if (!product_extra_info_id || !user_id) {
+            return res
+                .status(400)
+                .json({ success: false, message: "Missing required fields" });
+        }
+
+        const result = await pool.query(
+            "DELETE FROM product_extra_info_access WHERE product_extra_info_id = $1 AND user_id = $2 RETURNING id",
+            [product_extra_info_id, user_id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No access record found for this user",
+            });
+        }
+
+        res.status(200).json({ success: true, message: "Access removed successfully" });
+    } catch (error) {
+        console.error("Error removing access:", error);
+        res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
 exports.deleteProductExtraInfo = async (req, res) => {
     try {
         const { id } = req.params;
