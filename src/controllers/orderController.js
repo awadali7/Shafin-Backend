@@ -67,53 +67,6 @@ function getShippingZone(customerCity, customerState, customerPincode, originCit
     return 'D';
 }
 
-function getZoneRateConfig(settings, zone) {
-    if (zone === "A") {
-        return {
-            baseWeight:       Number(settings.local_base_weight       || 1000),
-            baseRate:         Number(settings.local_base_rate         || 50),
-            additionalWeight: Number(settings.local_additional_weight || 1000),
-            additionalRate:   Number(settings.local_additional_rate   || 40),
-        };
-    }
-
-    if (zone === "B") {
-        return {
-            baseWeight:       Number(settings.regional_base_weight       || 1000),
-            baseRate:         Number(settings.regional_base_rate         || 70),
-            additionalWeight: Number(settings.regional_additional_weight || 1000),
-            additionalRate:   Number(settings.regional_additional_rate   || 60),
-        };
-    }
-
-    // Zones C, D, E, F all use the national rate config.
-    // Add zone_c_*, zone_e_*, zone_f_* rows to site_settings to differentiate later.
-    return {
-        baseWeight:       Number(settings.national_base_weight       || 1000),
-        baseRate:         Number(settings.national_base_rate         || 100),
-        additionalWeight: Number(settings.national_additional_weight || 1000),
-        additionalRate:   Number(settings.national_additional_rate   || 90),
-    };
-}
-
-function calculateWeightBasedShipping(weight, settings, zone) {
-    if (weight <= 0) return 0;
-
-    const {
-        baseWeight,
-        baseRate,
-        additionalWeight,
-        additionalRate,
-    } = getZoneRateConfig(settings, zone);
-
-    if (weight <= baseWeight) {
-        return baseRate;
-    }
-
-    const extraWeight = weight - baseWeight;
-    const extraSlabs = Math.ceil(extraWeight / additionalWeight);
-    return baseRate + extraSlabs * additionalRate;
-}
 
 async function hasOrderNumberColumn() {
     if (hasOrderNumberColumnCache !== null) {
@@ -145,7 +98,7 @@ async function getOrderNumberSelect(alias = "") {
 
 async function getShippingSettings(client) {
     const settingsRes = await client.query(
-        "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('shipping_origin_city', 'shipping_origin_state', 'shipping_origin_pincode', 'local_base_weight', 'local_base_rate', 'local_additional_weight', 'local_additional_rate', 'regional_base_weight', 'regional_base_rate', 'regional_additional_weight', 'regional_additional_rate', 'national_base_weight', 'national_base_rate', 'national_additional_weight', 'national_additional_rate')"
+        "SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('shipping_origin_city', 'shipping_origin_state', 'shipping_origin_pincode')"
     );
     const settings = {};
     settingsRes.rows.forEach((r) => (settings[r.setting_key] = r.setting_value));
@@ -188,40 +141,22 @@ function buildOrderPricingQuote(items, customer, byId, settings) {
     let totalDiscount = 0;
     let totalShippingCost = 0;
     const itemsWithPricing = [];
-    const originGroups = {};
 
     for (const item of items) {
         const p = byId.get(item.product_id);
         const basePrice = Number(p.price);
         const quantity = Number(item.quantity || 1);
-        const weight = Number(p.weight ?? 0);
-        const volWeight = Number(p.volumetric_weight ?? 0);
         const extraShippingCharge = Number(p.extra_shipping_charge ?? 0);
-        const chargeableWeight = Math.max(weight, volWeight);
 
         const itemOriginCity    = p.origin_city    || defaultOriginCity;
         const itemOriginState   = p.origin_state   || defaultOriginState;
         const itemOriginPincode = p.origin_pincode || defaultOriginPincode;
-        const originKey = `${itemOriginCity}_${itemOriginState}`.toLowerCase();
         const zone = getShippingZone(
             customer.city, customer.state, customer.pincode,
             itemOriginCity, itemOriginState, itemOriginPincode
         );
 
-        if (!originGroups[originKey]) {
-            originGroups[originKey] = {
-                key: originKey,
-                origin_city: itemOriginCity,
-                origin_state: itemOriginState,
-                origin_pincode: itemOriginPincode,
-                zone,
-                totalWeight: 0,
-                slabCost: 0,
-            };
-        }
-
         if (p.product_type === "physical") {
-            originGroups[originKey].totalWeight += chargeableWeight * quantity;
             totalShippingCost += extraShippingCharge * quantity;
         }
 
@@ -255,14 +190,6 @@ function buildOrderPricingQuote(items, customer, byId, settings) {
         });
     }
 
-    for (const originKey in originGroups) {
-        const group = originGroups[originKey];
-        group.slabCost = toMoney(
-            calculateWeightBasedShipping(Number(group.totalWeight || 0), settings, group.zone)
-        );
-        totalShippingCost += group.slabCost;
-    }
-
     const subtotal = toMoney(itemsSubtotal);
     const shippingCost = toMoney(totalShippingCost);
     const discount = toMoney(totalDiscount);
@@ -274,7 +201,6 @@ function buildOrderPricingQuote(items, customer, byId, settings) {
         shipping_cost: shippingCost,
         total,
         items: itemsWithPricing,
-        shipping_groups: Object.values(originGroups),
     };
 }
 
