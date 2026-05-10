@@ -499,6 +499,53 @@ const sendOrderStatusUpdateEmail = async (userEmail, userName, orderNumber, stat
 };
 
 /**
+ * Send Tracking Info Updated Email (no status change — just tracking details added/edited)
+ */
+const sendTrackingUpdatedEmail = async (
+    userEmail,
+    userName,
+    orderNumber,
+    trackingNumber,
+    trackingUrl,
+    estimatedDelivery
+) => {
+    const subject = `Tracking Update for Your Order #${orderNumber}`;
+    const frontendUrl = process.env.FRONTEND_URL || "";
+    const orderUrl = `${frontendUrl}/orders`;
+
+    const deliveryLine = estimatedDelivery
+        ? `<p style="margin: 6px 0 0;"><strong>Estimated Delivery:</strong> ${new Date(estimatedDelivery).toDateString()}</p>`
+        : "";
+
+    const trackBtn = trackingUrl
+        ? `<p style="margin: 12px 0 0;"><a href="${trackingUrl}" style="background-color: #004085; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; display: inline-block;">Track Package</a></p>`
+        : "";
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #004085;">🔍 Tracking Information Updated</h2>
+            <p>Hi ${userName},</p>
+            <p>The shipping details for your order <strong>#${orderNumber}</strong> have been updated.</p>
+
+            <div style="background-color: #cce5ff; border-left: 4px solid #004085; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>Tracking Number:</strong> ${trackingNumber}</p>
+                ${deliveryLine}
+                ${trackBtn}
+            </div>
+
+            <p>You can also view your full order details from your account.</p>
+
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${orderUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View My Orders</a>
+            </div>
+
+            <p>Best regards,<br>DiagTools India Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
  * Send Product Extra Information Email
  */
 const sendProductExtraInfoEmail = async (
@@ -546,4 +593,5 @@ module.exports = {
     sendOrderShippedEmail,
     sendOrderDeliveredEmail,
     sendOrderStatusUpdateEmail,
+    sendTrackingUpdatedEmail,
 };

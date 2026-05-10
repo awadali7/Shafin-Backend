@@ -3,6 +3,7 @@ const router = express.Router();
 const adminController = require("../controllers/adminController");
 const entitlementController = require("../controllers/entitlementController");
 const digitalController = require("../controllers/digitalController");
+const courierBoxController = require("../controllers/courierBoxController");
 const { authenticate, isAdmin } = require("../middleware/auth");
 
 // All routes require admin authentication
@@ -35,5 +36,11 @@ router.post(
 );
 router.delete("/digital-files/:filename", digitalController.deleteDigitalFile);
 router.get("/digital-files/:filename/download", digitalController.downloadDigitalFile);
+
+// Courier Boxes
+router.get("/courier-boxes", courierBoxController.listCourierBoxes);
+router.post("/courier-boxes", courierBoxController.createCourierBox);
+router.put("/courier-boxes/:id", courierBoxController.updateCourierBox);
+router.delete("/courier-boxes/:id", courierBoxController.deleteCourierBox);
 
 module.exports = router;

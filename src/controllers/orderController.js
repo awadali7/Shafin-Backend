@@ -10,6 +10,7 @@ const {
     sendOrderShippedEmail,
     sendOrderDeliveredEmail,
     sendOrderStatusUpdateEmail,
+    sendTrackingUpdatedEmail,
 } = require("../config/email");
 
 let hasOrderNumberColumnCache = null;
@@ -105,6 +106,42 @@ async function getShippingSettings(client) {
     return settings;
 }
 
+async function loadCourierBoxesForProducts(client, byId) {
+    const ids = new Set();
+    for (const product of byId.values()) {
+        for (const tier of (product.tiered_pricing || [])) {
+            if (tier.courier_box_id) ids.add(tier.courier_box_id);
+        }
+    }
+    if (ids.size === 0) return new Map();
+    const result = await client.query(
+        `SELECT id, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f
+         FROM courier_boxes WHERE id = ANY($1::uuid[])`,
+        [Array.from(ids)]
+    );
+    return new Map(result.rows.map((r) => [r.id, r]));
+}
+
+function resolveTiersWithBoxes(tieredPricing, courierBoxes) {
+    if (!Array.isArray(tieredPricing) || !courierBoxes || courierBoxes.size === 0) {
+        return tieredPricing;
+    }
+    return tieredPricing.map((tier) => {
+        if (!tier.courier_box_id) return tier;
+        const box = courierBoxes.get(tier.courier_box_id);
+        if (!box) return tier;
+        return {
+            ...tier,
+            courier_charge_a: Number(box.charge_a),
+            courier_charge_b: Number(box.charge_b),
+            courier_charge_c: Number(box.charge_c),
+            courier_charge_d: Number(box.charge_d),
+            courier_charge_e: Number(box.charge_e),
+            courier_charge_f: Number(box.charge_f),
+        };
+    });
+}
+
 async function loadProductsForItems(client, items) {
     const ids = items.map((i) => i.product_id).filter(Boolean);
     if (ids.length !== items.length) {
@@ -132,7 +169,7 @@ async function loadProductsForItems(client, items) {
     };
 }
 
-function buildOrderPricingQuote(items, customer, byId, settings) {
+function buildOrderPricingQuote(items, customer, byId, settings, courierBoxes = new Map()) {
     const defaultOriginCity    = settings.shipping_origin_city    || "Ernakulam";
     const defaultOriginState   = settings.shipping_origin_state   || "Kerala";
     const defaultOriginPincode = settings.shipping_origin_pincode || "";
@@ -160,10 +197,11 @@ function buildOrderPricingQuote(items, customer, byId, settings) {
             totalShippingCost += extraShippingCharge * quantity;
         }
 
+        const resolvedTiers = resolveTiersWithBoxes(p.tiered_pricing || [], courierBoxes);
         const pricingInfo = calculateQuantityPrice(
             basePrice,
             quantity,
-            p.tiered_pricing || [],
+            resolvedTiers,
             zone
         );
 
@@ -263,7 +301,8 @@ const getOrderQuote = async (req, res, next) => {
         }
 
         const settings = await getShippingSettings(client);
-        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings);
+        const courierBoxes = await loadCourierBoxesForProducts(client, byId);
+        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings, courierBoxes);
 
         return res.json({
             success: true,
@@ -449,7 +488,8 @@ const createOrder = async (req, res, next) => {
         });
 
         const settings = await getShippingSettings(client);
-        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings);
+        const courierBoxes = await loadCourierBoxesForProducts(client, byId);
+        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings, courierBoxes);
         const subtotal = quote.subtotal;
         const shippingCost = quote.shipping_cost;
         const totalDiscount = quote.discount;
@@ -1038,6 +1078,28 @@ const adminUpdateTracking = async (req, res, next) => {
                 sendOrderDeliveredEmail(orderUserEmail, orderUserName, orderNumber).catch(() => {});
             } else {
                 sendOrderStatusUpdateEmail(orderUserEmail, orderUserName, orderNumber, targetStatus).catch(() => {});
+            }
+        } else {
+            // No status change — but if tracking info was provided, notify the user
+            const newTrackingNumber = tracking_number !== undefined ? tracking_number : result.rows[0].tracking_number;
+            if (newTrackingNumber) {
+                const newTrackingUrl = tracking_url !== undefined ? tracking_url : result.rows[0].tracking_url;
+                const newEstimatedDelivery = estimated_delivery_date !== undefined ? estimated_delivery_date : result.rows[0].estimated_delivery_date;
+                createNotification(
+                    orderUserId,
+                    "order_tracking_updated",
+                    "Tracking Info Updated",
+                    `Tracking details for your order #${orderNumber} have been updated.`,
+                    { order_id: id, order_number: orderNumber }
+                ).catch(() => {});
+                sendTrackingUpdatedEmail(
+                    orderUserEmail,
+                    orderUserName,
+                    orderNumber,
+                    newTrackingNumber,
+                    newTrackingUrl,
+                    newEstimatedDelivery
+                ).catch(() => {});
             }
         }
 
