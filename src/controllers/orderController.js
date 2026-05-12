@@ -106,40 +106,13 @@ async function getShippingSettings(client) {
     return settings;
 }
 
-async function loadCourierBoxesForProducts(client, byId) {
-    const ids = new Set();
-    for (const product of byId.values()) {
-        for (const tier of (product.tiered_pricing || [])) {
-            if (tier.courier_box_id) ids.add(tier.courier_box_id);
-        }
-    }
-    if (ids.size === 0) return new Map();
+async function loadAllCourierBoxesSortedByWeight(client) {
     const result = await client.query(
-        `SELECT id, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f
-         FROM courier_boxes WHERE id = ANY($1::uuid[])`,
-        [Array.from(ids)]
+        `SELECT id, name, weight_grams, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f
+         FROM courier_boxes
+         ORDER BY weight_grams ASC`
     );
-    return new Map(result.rows.map((r) => [r.id, r]));
-}
-
-function resolveTiersWithBoxes(tieredPricing, courierBoxes) {
-    if (!Array.isArray(tieredPricing) || !courierBoxes || courierBoxes.size === 0) {
-        return tieredPricing;
-    }
-    return tieredPricing.map((tier) => {
-        if (!tier.courier_box_id) return tier;
-        const box = courierBoxes.get(tier.courier_box_id);
-        if (!box) return tier;
-        return {
-            ...tier,
-            courier_charge_a: Number(box.charge_a),
-            courier_charge_b: Number(box.charge_b),
-            courier_charge_c: Number(box.charge_c),
-            courier_charge_d: Number(box.charge_d),
-            courier_charge_e: Number(box.charge_e),
-            courier_charge_f: Number(box.charge_f),
-        };
-    });
+    return result.rows;
 }
 
 async function loadProductsForItems(client, items) {
@@ -169,47 +142,40 @@ async function loadProductsForItems(client, items) {
     };
 }
 
-function buildOrderPricingQuote(items, customer, byId, settings, courierBoxes = new Map()) {
+function buildOrderPricingQuote(items, customer, byId, settings, allCourierBoxes = []) {
     const defaultOriginCity    = settings.shipping_origin_city    || "Ernakulam";
     const defaultOriginState   = settings.shipping_origin_state   || "Kerala";
     const defaultOriginPincode = settings.shipping_origin_pincode || "";
 
+    // Determine zone using default shipping origin
+    const zone = getShippingZone(
+        customer.city, customer.state, customer.pincode,
+        defaultOriginCity, defaultOriginState, defaultOriginPincode
+    );
+
     let itemsSubtotal = 0;
     let totalDiscount = 0;
-    let totalShippingCost = 0;
+    let totalWeightGrams = 0;
     const itemsWithPricing = [];
 
     for (const item of items) {
         const p = byId.get(item.product_id);
         const basePrice = Number(p.price);
         const quantity = Number(item.quantity || 1);
-        const extraShippingCharge = Number(p.extra_shipping_charge ?? 0);
-
-        const itemOriginCity    = p.origin_city    || defaultOriginCity;
-        const itemOriginState   = p.origin_state   || defaultOriginState;
-        const itemOriginPincode = p.origin_pincode || defaultOriginPincode;
-        const zone = getShippingZone(
-            customer.city, customer.state, customer.pincode,
-            itemOriginCity, itemOriginState, itemOriginPincode
-        );
 
         if (p.product_type === "physical") {
-            totalShippingCost += extraShippingCharge * quantity;
+            totalWeightGrams += (Number(p.weight) || 0) * quantity;
         }
 
-        const resolvedTiers = resolveTiersWithBoxes(p.tiered_pricing || [], courierBoxes);
         const pricingInfo = calculateQuantityPrice(
             basePrice,
             quantity,
-            resolvedTiers,
+            p.tiered_pricing || [],
             zone
         );
 
         itemsSubtotal += pricingInfo.itemsTotal;
         totalDiscount += pricingInfo.savings;
-        if (p.product_type === "physical") {
-            totalShippingCost += pricingInfo.courierCharge * quantity;
-        }
 
         itemsWithPricing.push({
             product_id: p.id,
@@ -221,15 +187,25 @@ function buildOrderPricingQuote(items, customer, byId, settings, courierBoxes = 
             unit_price: basePrice,
             line_total: toMoney(pricingInfo.itemsTotal),
             price_per_item: toMoney(pricingInfo.pricePerItem),
-            courier_charge: p.product_type === "physical" ? toMoney(pricingInfo.courierCharge * quantity) : 0,
-            origin_city: itemOriginCity,
-            origin_state: itemOriginState,
+            courier_charge: 0,
             zone,
         });
     }
 
+    // Auto-select the smallest courier box whose weight_grams >= total cart weight.
+    // boxes are sorted by weight_grams ASC so the first match is the best fit.
+    const hasPhysical = items.some(i => byId.get(i.product_id)?.product_type === "physical");
+    let selectedBox = null;
+    if (hasPhysical && allCourierBoxes.length > 0) {
+        selectedBox = allCourierBoxes.find(b => Number(b.weight_grams) >= totalWeightGrams)
+            || allCourierBoxes[allCourierBoxes.length - 1]; // fallback: largest available box
+    }
+
+    const zoneField = `charge_${zone.toLowerCase()}`;
+    const courierCost = selectedBox ? Number(selectedBox[zoneField] || 0) : 0;
+
     const subtotal = toMoney(itemsSubtotal);
-    const shippingCost = toMoney(totalShippingCost);
+    const shippingCost = toMoney(courierCost);
     const discount = toMoney(totalDiscount);
     const total = toMoney(subtotal + shippingCost);
 
@@ -239,6 +215,12 @@ function buildOrderPricingQuote(items, customer, byId, settings, courierBoxes = 
         shipping_cost: shippingCost,
         total,
         items: itemsWithPricing,
+        shipping_groups: [],
+        total_weight_grams: totalWeightGrams,
+        zone,
+        selected_courier_box: selectedBox
+            ? { id: selectedBox.id, name: selectedBox.name, weight_grams: Number(selectedBox.weight_grams) }
+            : null,
     };
 }
 
@@ -301,8 +283,8 @@ const getOrderQuote = async (req, res, next) => {
         }
 
         const settings = await getShippingSettings(client);
-        const courierBoxes = await loadCourierBoxesForProducts(client, byId);
-        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings, courierBoxes);
+        const allCourierBoxes = await loadAllCourierBoxesSortedByWeight(client);
+        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings, allCourierBoxes);
 
         return res.json({
             success: true,
@@ -488,8 +470,8 @@ const createOrder = async (req, res, next) => {
         });
 
         const settings = await getShippingSettings(client);
-        const courierBoxes = await loadCourierBoxesForProducts(client, byId);
-        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings, courierBoxes);
+        const allCourierBoxes = await loadAllCourierBoxesSortedByWeight(client);
+        const quote = buildOrderPricingQuote(items, customer || {}, byId, settings, allCourierBoxes);
         const subtotal = quote.subtotal;
         const shippingCost = quote.shipping_cost;
         const totalDiscount = quote.discount;

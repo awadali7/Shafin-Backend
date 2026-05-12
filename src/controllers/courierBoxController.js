@@ -3,9 +3,9 @@ const { query, getClient } = require("../config/database");
 const listCourierBoxes = async (req, res, next) => {
     try {
         const result = await query(
-            `SELECT id, name, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f, created_at
+            `SELECT id, name, weight_grams, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f, created_at
              FROM courier_boxes
-             ORDER BY name ASC`
+             ORDER BY weight_grams ASC, name ASC`
         );
         res.json({ success: true, data: result.rows });
     } catch (error) {
@@ -15,16 +15,17 @@ const listCourierBoxes = async (req, res, next) => {
 
 const createCourierBox = async (req, res, next) => {
     try {
-        const { name, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f } = req.body || {};
+        const { name, weight_grams, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f } = req.body || {};
         if (!name || !name.trim()) {
             return res.status(400).json({ success: false, message: "Name is required" });
         }
         const result = await query(
-            `INSERT INTO courier_boxes (name, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `INSERT INTO courier_boxes (name, weight_grams, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
             [
                 name.trim(),
+                Number(weight_grams) || 0,
                 Number(charge_a) || 0,
                 Number(charge_b) || 0,
                 Number(charge_c) || 0,
@@ -42,18 +43,19 @@ const createCourierBox = async (req, res, next) => {
 const updateCourierBox = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const { name, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f } = req.body || {};
+        const { name, weight_grams, charge_a, charge_b, charge_c, charge_d, charge_e, charge_f } = req.body || {};
         if (!name || !name.trim()) {
             return res.status(400).json({ success: false, message: "Name is required" });
         }
         const result = await query(
             `UPDATE courier_boxes
-             SET name = $1, charge_a = $2, charge_b = $3, charge_c = $4,
-                 charge_d = $5, charge_e = $6, charge_f = $7, updated_at = NOW()
-             WHERE id = $8
+             SET name = $1, weight_grams = $2, charge_a = $3, charge_b = $4, charge_c = $5,
+                 charge_d = $6, charge_e = $7, charge_f = $8, updated_at = NOW()
+             WHERE id = $9
              RETURNING *`,
             [
                 name.trim(),
+                Number(weight_grams) || 0,
                 Number(charge_a) || 0,
                 Number(charge_b) || 0,
                 Number(charge_c) || 0,
