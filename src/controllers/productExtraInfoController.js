@@ -388,6 +388,104 @@ exports.removeAccess = async (req, res) => {
     }
 };
 
+exports.updateProductExtraInfo = async (req, res) => {
+    const tempImages = req.files?.images || [];
+    const tempPdfs = req.files?.pdfs || [];
+
+    try {
+        const { id } = req.params;
+        const { title, body, existing_images, existing_pdfs } = req.body;
+
+        const currentResult = await pool.query(
+            "SELECT id, title, slug, image_files, pdf_files, body FROM product_extra_infos WHERE id = $1",
+            [id]
+        );
+        if (currentResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Extra Info package not found" });
+        }
+        const current = currentResult.rows[0];
+
+        let slug = current.slug;
+        if (title && title.trim() !== current.title) {
+            slug = await ensureUniqueSlug(generateSlug(title), id);
+        }
+
+        const keptImages = existing_images ? JSON.parse(existing_images) : (current.image_files || []);
+        const keptPdfs = existing_pdfs ? JSON.parse(existing_pdfs) : (current.pdf_files || []);
+
+        const keptImagePaths = new Set(keptImages.map((f) => f.path));
+        const keptPdfPaths = new Set(keptPdfs.map((f) => f.path));
+
+        for (const img of (current.image_files || [])) {
+            if (!keptImagePaths.has(img.path)) {
+                const fullPath = path.join(__dirname, "../../", img.path);
+                if (fs.existsSync(fullPath)) {
+                    try { fs.unlinkSync(fullPath); } catch (e) { console.error("Failed to delete image:", e); }
+                }
+            }
+        }
+        for (const pdf of (current.pdf_files || [])) {
+            if (!keptPdfPaths.has(pdf.path)) {
+                const fullPath = path.join(__dirname, "../../", pdf.path);
+                if (fs.existsSync(fullPath)) {
+                    try { fs.unlinkSync(fullPath); } catch (e) { console.error("Failed to delete pdf:", e); }
+                }
+            }
+        }
+
+        const packageDir = path.join(__dirname, "../../uploads/product-extra-info", id);
+        const imagesDir = path.join(packageDir, "images");
+        const pdfsDir = path.join(packageDir, "pdfs");
+
+        const newImages = moveUploadedFiles(
+            tempImages.map((file) => ({ ...file, originalName: file.originalname })),
+            imagesDir
+        );
+        const newPdfs = moveUploadedFiles(
+            tempPdfs.map((file) => ({ ...file, originalName: file.originalname })),
+            pdfsDir
+        );
+
+        const newImageMeta = buildAttachmentMetadata(newImages, "images", id);
+        const newPdfMeta = buildAttachmentMetadata(newPdfs, "pdfs", id);
+
+        const finalImages = [...keptImages, ...newImageMeta];
+        const finalPdfs = [...keptPdfs, ...newPdfMeta];
+
+        const result = await pool.query(
+            `UPDATE product_extra_infos
+             SET title = $1, slug = $2, body = $3, image_files = $4, pdf_files = $5, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $6
+             RETURNING id, title, slug, body, zip_file_path, image_files, pdf_files, created_at, updated_at`,
+            [
+                title || current.title,
+                slug,
+                body !== undefined ? body : current.body,
+                JSON.stringify(finalImages),
+                JSON.stringify(finalPdfs),
+                id,
+            ]
+        );
+
+        res.status(200).json({
+            success: true,
+            message: "Product Extra Info updated successfully",
+            data: result.rows[0],
+        });
+    } catch (error) {
+        console.error("Error updating product extra info:", error);
+        [...tempImages, ...tempPdfs].forEach((file) => {
+            if (file?.path && fs.existsSync(file.path)) {
+                try { fs.unlinkSync(file.path); } catch (e) { }
+            }
+        });
+        res.status(500).json({
+            success: false,
+            message: getSchemaMismatchMessage(error) || "Error updating product extra info",
+        });
+    }
+};
+
 exports.deleteProductExtraInfo = async (req, res) => {
     try {
         const { id } = req.params;

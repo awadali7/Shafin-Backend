@@ -38,6 +38,10 @@ router.get("/slug/:slug", authenticate, productExtraInfoController.getAccessible
 router.get("/:id", authenticate, isAdmin, productExtraInfoController.getProductExtraInfoById);
 router.post("/grant", express.json(), authenticate, isAdmin, productExtraInfoController.grantAccess);
 router.post("/remove-access", express.json(), authenticate, isAdmin, productExtraInfoController.removeAccess);
+router.put("/:id", authenticate, isAdmin, upload.fields([
+    { name: "images", maxCount: 20 },
+    { name: "pdfs", maxCount: 10 }
+]), productExtraInfoController.updateProductExtraInfo);
 router.delete("/:id", authenticate, isAdmin, productExtraInfoController.deleteProductExtraInfo);
 router.get("/download/:id", productExtraInfoController.downloadZip);
 
