@@ -180,7 +180,9 @@ exports.createProductExtraInfo = async (req, res) => {
 exports.getAllProductExtraInfos = async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT id, title, slug, body, zip_file_path, image_files, pdf_files, created_at, updated_at
+            `SELECT id, title, slug, body, zip_file_path, created_at, updated_at,
+                    jsonb_array_length(COALESCE(image_files, '[]'::jsonb)) AS image_count,
+                    jsonb_array_length(COALESCE(pdf_files, '[]'::jsonb)) AS pdf_count
              FROM product_extra_infos
              ORDER BY created_at DESC`
         );
@@ -202,7 +204,11 @@ exports.getAllProductExtraInfos = async (req, res) => {
 exports.getMyProductExtraInfos = async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT pei.id, pei.title, pei.slug, pei.image_files, pei.pdf_files, peia.created_at as granted_at, peia.source
+            `SELECT pei.id, pei.title, pei.slug,
+                    pei.image_files->0->>'url' AS cover_image,
+                    jsonb_array_length(COALESCE(pei.image_files, '[]'::jsonb)) AS image_count,
+                    jsonb_array_length(COALESCE(pei.pdf_files, '[]'::jsonb)) AS pdf_count,
+                    peia.created_at as granted_at, peia.source
              FROM product_extra_infos pei
              JOIN product_extra_info_access peia ON pei.id = peia.product_extra_info_id
              WHERE peia.user_id = $1
