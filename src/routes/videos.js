@@ -60,6 +60,7 @@ router.post(
     "/:courseId/videos",
     authenticate,
     isAdmin,
+    jsonParser, // Parses JSON bodies; no-ops for multipart/form-data so multer still handles file uploads
     upload.array("pdfs", 10), // Allow up to 10 PDF files
     createVideoValidation,
     validate,
@@ -69,6 +70,7 @@ router.put(
     "/:courseId/videos/:videoId",
     authenticate,
     isAdmin,
+    jsonParser,
     upload.array("pdfs", 10), // Allow up to 10 PDF files
     videoController.updateVideo
 );
