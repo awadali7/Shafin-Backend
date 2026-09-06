@@ -6,7 +6,7 @@ const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
 const videoController = require("../controllers/videoController");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { createVideoValidation } = require("../utils/validators");
+const { createVideoValidation, updateVideoValidation } = require("../utils/validators");
 const validate = require("../middleware/validate");
 
 // Create PDFs directory if it doesn't exist
@@ -72,6 +72,8 @@ router.put(
     isAdmin,
     jsonParser,
     upload.array("pdfs", 10), // Allow up to 10 PDF files
+    updateVideoValidation,
+    validate,
     videoController.updateVideo
 );
 router.delete(

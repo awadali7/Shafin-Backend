@@ -1,4 +1,4 @@
-const { query } = require("../config/database");
+const { query, getClient } = require("../config/database");
 const { formatVideoEmbedUrl, detectVideoPlatform, getPublicUrl } = require("../utils/helpers");
 const { authenticate } = require("../middleware/auth");
 
@@ -192,31 +192,40 @@ const getVideoById = async (req, res, next) => {
  * Supports PDF file uploads via multipart/form-data
  */
 const createVideo = async (req, res, next) => {
+    const client = await getClient();
     try {
         const { courseId } = req.params;
         const { title, video_url, description, order_index, markdown } =
             req.body;
 
-        // Check if course exists
-        const courseCheck = await query(
-            "SELECT id FROM courses WHERE id = $1",
+        await client.query("BEGIN");
+
+        // Lock the course row so concurrent create/update requests for the
+        // same course serialize instead of racing past each other's
+        // order_index uniqueness check before either write commits.
+        const courseCheck = await client.query(
+            "SELECT id FROM courses WHERE id = $1 FOR UPDATE",
             [courseId]
         );
 
         if (courseCheck.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({
                 success: false,
                 message: "Course not found",
             });
         }
 
-        // Check if order_index already exists for this course
-        const orderCheck = await query(
-            "SELECT id FROM videos WHERE course_id = $1 AND order_index = $2",
+        // Check if order_index already exists among ACTIVE videos for this
+        // course. Soft-deleted videos (is_active = false) keep their old
+        // order_index, so they must not block reusing that slot.
+        const orderCheck = await client.query(
+            "SELECT id FROM videos WHERE course_id = $1 AND order_index = $2 AND is_active = true",
             [courseId, order_index]
         );
 
         if (orderCheck.rows.length > 0) {
+            await client.query("ROLLBACK");
             return res.status(409).json({
                 success: false,
                 message:
@@ -262,7 +271,7 @@ const createVideo = async (req, res, next) => {
             }
         }
 
-        const result = await query(
+        const result = await client.query(
             `INSERT INTO videos (course_id, title, video_url, description, order_index, pdfs, markdown)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING id, course_id, title, video_url, description, order_index, pdfs, markdown, created_at`,
@@ -277,13 +286,18 @@ const createVideo = async (req, res, next) => {
             ]
         );
 
+        await client.query("COMMIT");
+
         res.status(201).json({
             success: true,
             message: "Video created successfully",
             data: result.rows[0],
         });
     } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
         next(error);
+    } finally {
+        client.release();
     }
 };
 
@@ -292,6 +306,7 @@ const createVideo = async (req, res, next) => {
  * Supports PDF file uploads via multipart/form-data
  */
 const updateVideo = async (req, res, next) => {
+    const client = await getClient();
     try {
         const { courseId, videoId } = req.params;
         const {
@@ -303,27 +318,48 @@ const updateVideo = async (req, res, next) => {
             is_active,
         } = req.body;
 
+        await client.query("BEGIN");
+
+        // Lock the course row so this serializes against concurrent
+        // create/update requests for the same course (see createVideo).
+        const courseLock = await client.query(
+            "SELECT id FROM courses WHERE id = $1 FOR UPDATE",
+            [courseId]
+        );
+
+        if (courseLock.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({
+                success: false,
+                message: "Course not found",
+            });
+        }
+
         // Check if video exists
-        const videoCheck = await query(
+        const videoCheck = await client.query(
             "SELECT id FROM videos WHERE id = $1 AND course_id = $2",
             [videoId, courseId]
         );
 
         if (videoCheck.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({
                 success: false,
                 message: "Video not found",
             });
         }
 
-        // Check if order_index is being changed and already exists
+        // Check if order_index is being changed and already exists among
+        // ACTIVE videos (soft-deleted videos keep their old order_index and
+        // must not block reusing that slot).
         if (order_index !== undefined) {
-            const orderCheck = await query(
-                "SELECT id FROM videos WHERE course_id = $1 AND order_index = $2 AND id != $3",
+            const orderCheck = await client.query(
+                "SELECT id FROM videos WHERE course_id = $1 AND order_index = $2 AND id != $3 AND is_active = true",
                 [courseId, order_index, videoId]
             );
 
             if (orderCheck.rows.length > 0) {
+                await client.query("ROLLBACK");
                 return res.status(409).json({
                     success: false,
                     message:
@@ -415,6 +451,7 @@ const updateVideo = async (req, res, next) => {
         }
 
         if (updates.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(400).json({
                 success: false,
                 message: "No fields to update",
@@ -423,13 +460,15 @@ const updateVideo = async (req, res, next) => {
 
         values.push(videoId);
         const updateQuery = `
-            UPDATE videos 
+            UPDATE videos
             SET ${updates.join(", ")}, updated_at = CURRENT_TIMESTAMP
             WHERE id = $${paramCount}
             RETURNING id, course_id, title, video_url, description, order_index, pdfs, markdown, is_active, created_at
         `;
 
-        const result = await query(updateQuery, values);
+        const result = await client.query(updateQuery, values);
+
+        await client.query("COMMIT");
 
         res.json({
             success: true,
@@ -437,7 +476,10 @@ const updateVideo = async (req, res, next) => {
             data: result.rows[0],
         });
     } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
         next(error);
+    } finally {
+        client.release();
     }
 };
 

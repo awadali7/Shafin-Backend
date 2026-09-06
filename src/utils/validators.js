@@ -91,6 +91,35 @@ const createVideoValidation = [
 ];
 
 /**
+ * Validation rules for video update - all fields optional (partial update),
+ * but validated the same way as creation when present. Without this, editing
+ * a video accepted any truthy video_url with no format/domain check at all.
+ */
+const updateVideoValidation = [
+    body("title")
+        .optional()
+        .trim()
+        .notEmpty()
+        .withMessage("Video title cannot be empty")
+        .isLength({ min: 3, max: 255 })
+        .withMessage("Video title must be between 3 and 255 characters"),
+    body("video_url")
+        .optional()
+        .isURL()
+        .withMessage("Video URL must be a valid URL")
+        .matches(/youtube\.com|youtu\.be|vimeo\.com/)
+        .withMessage("Video URL must be a YouTube or Vimeo URL"),
+    body("order_index")
+        .optional()
+        .isInt({ min: 0 })
+        .withMessage("Order index must be a non-negative integer"),
+    body("description")
+        .optional()
+        .isString()
+        .withMessage("Description must be a string"),
+];
+
+/**
  * Validation rules for course request
  */
 const createRequestValidation = [
@@ -125,6 +154,7 @@ module.exports = {
     loginValidation,
     createCourseValidation,
     createVideoValidation,
+    updateVideoValidation,
     createRequestValidation,
     approveRequestValidation,
 };

@@ -58,13 +58,17 @@ CREATE TABLE IF NOT EXISTS videos (
     markdown TEXT,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(course_id, order_index)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_videos_course_id ON videos(course_id);
 CREATE INDEX IF NOT EXISTS idx_videos_order_index ON videos(course_id, order_index);
 CREATE INDEX IF NOT EXISTS idx_videos_is_active ON videos(is_active);
+-- Partial unique index: order_index only needs to be unique among active
+-- videos, so deleting (soft-delete) a video frees its slot for reuse.
+CREATE UNIQUE INDEX IF NOT EXISTS videos_course_id_order_index_active_key
+    ON videos (course_id, order_index)
+    WHERE is_active = true;
 
 -- Create course_requests table
 -- NOTE: This table is for admin-granted course access requests (optional feature)
