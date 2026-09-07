@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const userController = require("../controllers/userController");
 const entitlementController = require("../controllers/entitlementController");
+const digitalController = require("../controllers/digitalController");
 const { authenticate } = require("../middleware/auth");
 const { upload } = require("../controllers/uploadController");
 
@@ -20,6 +21,14 @@ router.get("/navigation-stats", userController.getNavigationStats);
 router.get(
     "/product-entitlements",
     entitlementController.getMyProductEntitlements
+);
+router.get(
+    "/digital-file-access",
+    digitalController.getMyDigitalFileAccess
+);
+router.get(
+    "/digital-files/:filename/download",
+    digitalController.downloadMyDigitalFile
 );
 
 module.exports = router;

@@ -1,6 +1,8 @@
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const { query } = require("../config/database");
+const { sendDigitalFileAccessEmail } = require("../config/email");
 
 // Private directory for digital files
 const digitalDir = path.join(__dirname, "../../private_uploads/digital");
@@ -215,10 +217,179 @@ const downloadDigitalFile = async (req, res, next) => {
     }
 };
 
+/**
+ * Admin: grant a digital file to a user for a time-bound period
+ */
+const grantDigitalFileAccess = async (req, res, next) => {
+    try {
+        const { filename, user_id, access_start, access_end } = req.body || {};
+
+        if (!filename || !user_id || !access_start || !access_end) {
+            return res.status(400).json({
+                success: false,
+                message:
+                    "filename, user_id, access_start, and access_end are required",
+            });
+        }
+
+        const safeFilename = path.basename(filename);
+        if (!fs.existsSync(path.join(digitalDir, safeFilename))) {
+            return res.status(404).json({
+                success: false,
+                message: "File not found in library",
+            });
+        }
+
+        const userResult = await query(
+            "SELECT id, email, first_name, last_name FROM users WHERE id = $1",
+            [user_id]
+        );
+        if (userResult.rows.length === 0) {
+            return res
+                .status(404)
+                .json({ success: false, message: "User not found" });
+        }
+        const user = userResult.rows[0];
+
+        const accessResult = await query(
+            `INSERT INTO digital_file_access (user_id, filename, access_start, access_end, granted_by)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (user_id, filename) DO UPDATE
+             SET access_start = EXCLUDED.access_start,
+                 access_end = EXCLUDED.access_end,
+                 is_active = true,
+                 granted_by = EXCLUDED.granted_by,
+                 updated_at = CURRENT_TIMESTAMP
+             RETURNING id, access_start, access_end`,
+            [user_id, safeFilename, access_start, access_end, req.user.id]
+        );
+
+        sendDigitalFileAccessEmail(
+            user.email,
+            `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+                user.email,
+            safeFilename,
+            access_start,
+            access_end
+        ).catch((err) =>
+            console.error("Failed to send digital file access email:", err)
+        );
+
+        res.json({
+            success: true,
+            message: "Digital file access granted successfully",
+            data: accessResult.rows[0],
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Admin: revoke a user's access to a digital file
+ */
+const revokeDigitalFileAccess = async (req, res, next) => {
+    try {
+        const { filename, user_id } = req.body || {};
+        if (!filename || !user_id) {
+            return res.status(400).json({
+                success: false,
+                message: "filename and user_id are required",
+            });
+        }
+
+        const safeFilename = path.basename(filename);
+
+        const result = await query(
+            `UPDATE digital_file_access
+             SET is_active = false,
+                 access_end = LEAST(access_end, CURRENT_TIMESTAMP)
+             WHERE user_id = $1 AND filename = $2
+               AND is_active = true AND access_end > CURRENT_TIMESTAMP
+             RETURNING id`,
+            [user_id, safeFilename]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No active access found for this user",
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "Digital file access removed successfully",
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * User: list digital files currently granted to me
+ */
+const getMyDigitalFileAccess = async (req, res, next) => {
+    try {
+        const result = await query(
+            `SELECT id as access_id, filename, source, access_start, access_end, created_at as granted_at
+             FROM digital_file_access
+             WHERE user_id = $1 AND is_active = true
+               AND CURRENT_TIMESTAMP BETWEEN access_start AND access_end
+             ORDER BY created_at DESC`,
+            [req.user.id]
+        );
+        res.json({ success: true, data: result.rows });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * User: download a digital file I've been granted access to
+ */
+const downloadMyDigitalFile = async (req, res, next) => {
+    try {
+        const { filename } = req.params;
+        const safeFilename = path.basename(filename);
+
+        const access = await query(
+            `SELECT id FROM digital_file_access
+             WHERE user_id = $1 AND filename = $2 AND is_active = true
+               AND CURRENT_TIMESTAMP BETWEEN access_start AND access_end
+             LIMIT 1`,
+            [req.user.id, safeFilename]
+        );
+
+        if (access.rows.length === 0) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    "You don't have access to this file. Contact admin.",
+            });
+        }
+
+        const filePath = path.join(digitalDir, safeFilename);
+        if (!fs.existsSync(filePath)) {
+            return res
+                .status(404)
+                .json({ success: false, message: "File not found" });
+        }
+
+        res.download(filePath, safeFilename);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     listDigitalFiles,
     uploadDigitalFile,
     deleteDigitalFile,
     downloadDigitalFile,
+    grantDigitalFileAccess,
+    revokeDigitalFileAccess,
+    getMyDigitalFileAccess,
+    downloadMyDigitalFile,
     upload,
 };

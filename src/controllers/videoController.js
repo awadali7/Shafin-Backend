@@ -503,11 +503,7 @@ const deleteVideo = async (req, res, next) => {
             });
         }
 
-        // Soft delete
-        await query(
-            "UPDATE videos SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-            [videoId]
-        );
+        await query("DELETE FROM videos WHERE id = $1", [videoId]);
 
         res.json({
             success: true,

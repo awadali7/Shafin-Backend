@@ -577,6 +577,38 @@ const sendProductExtraInfoEmail = async (
     return await sendEmail(userEmail, subject, html);
 };
 
+/**
+ * Send digital file access granted email
+ */
+const sendDigitalFileAccessEmail = async (
+    userEmail,
+    userName,
+    fileName,
+    accessStart,
+    accessEnd
+) => {
+    const subject = `You got access to ${fileName}`;
+    const frontendUrl = (process.env.FRONTEND_URL || "").split(",")[0].trim();
+    const downloadsUrl = `${frontendUrl}/downloads`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #B00000;">Digital File Access Granted</h2>
+            <p>Hi ${userName},</p>
+            <p>You have been granted access to <strong>${fileName}</strong>.</p>
+            <p><strong>Access Period:</strong></p>
+            <ul>
+                <li>Start: ${new Date(accessStart).toLocaleString()}</li>
+                <li>End: ${new Date(accessEnd).toLocaleString()}</li>
+            </ul>
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="${downloadsUrl}" style="background-color: #B00000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Go to My Downloads</a>
+            </div>
+            <p>Best regards,<br>DiagTools India Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
 module.exports = {
     sendEmail,
     sendWelcomeEmail,
@@ -589,6 +621,7 @@ module.exports = {
     sendKYCRejectedEmail,
     sendKYCPendingEmail,
     sendProductExtraInfoEmail,
+    sendDigitalFileAccessEmail,
     sendOrderConfirmedEmail,
     sendOrderShippedEmail,
     sendOrderDeliveredEmail,

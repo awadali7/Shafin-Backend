@@ -36,6 +36,8 @@ router.post(
 );
 router.delete("/digital-files/:filename", digitalController.deleteDigitalFile);
 router.get("/digital-files/:filename/download", digitalController.downloadDigitalFile);
+router.post("/digital-files/grant-access", digitalController.grantDigitalFileAccess);
+router.post("/digital-files/revoke-access", digitalController.revokeDigitalFileAccess);
 
 // Courier Boxes
 router.get("/courier-boxes", courierBoxController.listCourierBoxes);
