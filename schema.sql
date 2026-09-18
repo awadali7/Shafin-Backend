@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TIMESTAMP,
     last_login_ip VARCHAR(45),
     last_login_device JSONB,
+    pinout_device_id VARCHAR(128), -- The one device allowed to use the Pinout app
+    pinout_device_info JSONB,
+    pinout_device_bound_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -173,6 +176,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     ip_address VARCHAR(45),
     user_agent TEXT,
     is_active BOOLEAN DEFAULT true,
+    client VARCHAR(20) NOT NULL DEFAULT 'web' CHECK (client IN ('web', 'pinout')),
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL
@@ -182,6 +186,21 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(user_id, is_active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_client ON user_sessions(user_id, client, is_active);
+
+-- Create pinout_login_otps table (email OTP challenges for the Pinout app)
+CREATE TABLE IF NOT EXISTS pinout_login_otps (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id VARCHAR(128) NOT NULL,
+    otp_hash VARCHAR(255) NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    used BOOLEAN NOT NULL DEFAULT false,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_pinout_login_otps_user_id ON pinout_login_otps(user_id);
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

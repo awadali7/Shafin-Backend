@@ -149,9 +149,42 @@ const approveRequestValidation = [
         }),
 ];
 
+/**
+ * Validation rules for the Pinout app device fields
+ */
+const pinoutDeviceValidation = [
+    body("device_id")
+        .isString()
+        .withMessage("A valid device ID is required")
+        .bail()
+        .trim()
+        .isLength({ min: 8, max: 128 })
+        .withMessage("A valid device ID is required"),
+    body("device_name").optional().isString().trim().isLength({ max: 100 }),
+    body("device_platform").optional().isString().trim().isLength({ max: 30 }),
+];
+
+/**
+ * Validation rules for Pinout app login (step 1)
+ */
+const appLoginValidation = [...loginValidation, ...pinoutDeviceValidation];
+
+/**
+ * Validation rules for Pinout app OTP verification (step 2)
+ */
+const appVerifyOtpValidation = [
+    body("challenge_id").isUUID().withMessage("Invalid login request"),
+    body("otp")
+        .matches(/^\d{6}$/)
+        .withMessage("Enter the 6-digit code from your email"),
+    ...pinoutDeviceValidation,
+];
+
 module.exports = {
     registerValidation,
     loginValidation,
+    appLoginValidation,
+    appVerifyOtpValidation,
     createCourseValidation,
     createVideoValidation,
     updateVideoValidation,

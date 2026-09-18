@@ -199,6 +199,31 @@ const sendPasswordResetEmail = async (userEmail, userName, resetToken) => {
 };
 
 /**
+ * Send Pinout app login verification code
+ */
+const sendPinoutLoginOtpEmail = async (
+    userEmail,
+    userName,
+    otp,
+    expiresInMinutes = 10
+) => {
+    const subject = `${otp} is your Pinout login code`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #B00000;">Pinout App Login</h2>
+            <p>Hi ${userName},</p>
+            <p>Use this code to finish signing in to the Pinout app:</p>
+            <p style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #111;">${otp}</p>
+            <p>This code will expire in ${expiresInMinutes} minutes.</p>
+            <p>If you didn't try to sign in, please change your password — someone may know it.</p>
+            <p>Best regards,<br>DiagTools Team</p>
+        </div>
+    `;
+    const text = `Your Pinout login code is ${otp}. It expires in ${expiresInMinutes} minutes.`;
+    return await sendEmail(userEmail, subject, html, text);
+};
+
+/**
  * Send multiple device login warning email
  */
 const sendMultipleDeviceWarningEmail = async (
@@ -616,6 +641,7 @@ module.exports = {
     sendCoursePurchaseSuccessEmail,
     sendCourseAccessRejectedEmail,
     sendPasswordResetEmail,
+    sendPinoutLoginOtpEmail,
     sendMultipleDeviceWarningEmail,
     sendKYCApprovedEmail,
     sendKYCRejectedEmail,

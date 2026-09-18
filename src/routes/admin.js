@@ -13,6 +13,7 @@ router.use(isAdmin);
 router.get("/dashboard", adminController.getDashboard);
 router.get("/users", adminController.getAllUsers);
 router.get("/users/:id/login-details", adminController.getUserLoginDetails);
+router.delete("/users/:id/pinout-device", adminController.resetPinoutDevice);
 router.get("/requests", adminController.getAllRequests);
 router.get("/course-purchases", adminController.getAllCoursePurchases);
 router.post("/users", adminController.createUser);
