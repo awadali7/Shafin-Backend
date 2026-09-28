@@ -18,9 +18,6 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TIMESTAMP,
     last_login_ip VARCHAR(45),
     last_login_device JSONB,
-    pinout_device_id VARCHAR(128), -- The one device allowed to use the Pinout app
-    pinout_device_info JSONB,
-    pinout_device_bound_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -176,7 +173,6 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     ip_address VARCHAR(45),
     user_agent TEXT,
     is_active BOOLEAN DEFAULT true,
-    client VARCHAR(20) NOT NULL DEFAULT 'web' CHECK (client IN ('web', 'pinout')),
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL
@@ -186,21 +182,6 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(user_id, is_active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
-CREATE INDEX IF NOT EXISTS idx_user_sessions_client ON user_sessions(user_id, client, is_active);
-
--- Create pinout_login_otps table (email OTP challenges for the Pinout app)
-CREATE TABLE IF NOT EXISTS pinout_login_otps (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_id VARCHAR(128) NOT NULL,
-    otp_hash VARCHAR(255) NOT NULL,
-    attempts INT NOT NULL DEFAULT 0,
-    used BOOLEAN NOT NULL DEFAULT false,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_pinout_login_otps_user_id ON pinout_login_otps(user_id);
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -237,6 +218,69 @@ CREATE TRIGGER update_video_progress_updated_at BEFORE UPDATE ON video_progress
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Note: user_sessions doesn't have updated_at column, using last_activity instead
+
+-- Pinout app accounts (separate from website users). Each claims one serial
+-- number that an admin approves or rejects. See migrations/create_app_users.sql.
+CREATE TABLE IF NOT EXISTS app_users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    full_name VARCHAR(150) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL, -- stored lowercase
+    password_hash VARCHAR(255) NOT NULL,
+    serial_number VARCHAR(50), -- stored normalized: no spaces, uppercase
+    status VARCHAR(20) NOT NULL DEFAULT 'serial_required'
+        CHECK (status IN ('serial_required', 'pending', 'approved', 'rejected')),
+    rejection_reason TEXT,
+    serial_submitted_at TIMESTAMP,
+    reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMP,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    last_login_at TIMESTAMP,
+    last_login_device JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Rejected accounts release their serial
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_serial_unique
+    ON app_users(serial_number)
+    WHERE status IN ('pending', 'approved');
+CREATE INDEX IF NOT EXISTS idx_app_users_status ON app_users(status, serial_submitted_at DESC);
+
+DROP TRIGGER IF EXISTS update_app_users_updated_at ON app_users;
+CREATE TRIGGER update_app_users_updated_at BEFORE UPDATE ON app_users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- One active session per app user; a new login ends the previous device's session
+CREATE TABLE IF NOT EXISTS app_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    app_user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    session_token VARCHAR(255) UNIQUE NOT NULL,
+    device_id VARCHAR(128) NOT NULL,
+    device_info JSONB,
+    ip_address VARCHAR(45),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    ended_reason VARCHAR(20) CHECK (ended_reason IN ('logout', 'replaced', 'password_reset')),
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_sessions_user_active ON app_sessions(app_user_id, is_active);
+
+-- Email codes for Pinout app signup and password reset
+CREATE TABLE IF NOT EXISTS app_email_otps (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) NOT NULL,
+    purpose VARCHAR(20) NOT NULL CHECK (purpose IN ('signup', 'reset_password')),
+    otp_hash VARCHAR(255) NOT NULL,
+    payload JSONB, -- signup: { full_name, password_hash } until the code is verified
+    attempts INT NOT NULL DEFAULT 0,
+    used BOOLEAN NOT NULL DEFAULT false,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_email_otps_email ON app_email_otps(email, purpose);
 
 -- Create notifications table
 CREATE TABLE IF NOT EXISTS notifications (

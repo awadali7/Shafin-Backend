@@ -1,5 +1,4 @@
 const bcrypt = require("bcryptjs");
-const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
 const { query, getClient } = require("../config/database");
 const { generateToken, generateRefreshToken } = require("../config/jwt");
@@ -7,7 +6,6 @@ const {
     sendWelcomeEmail,
     sendPasswordResetEmail,
     sendMultipleDeviceWarningEmail,
-    sendPinoutLoginOtpEmail,
 } = require("../config/email");
 const { createNotification } = require("./notificationController");
 
@@ -153,24 +151,17 @@ const getDeviceInfo = (req) => {
 };
 
 /**
- * Helper function to create a session.
- * `client` is "web" or "pinout" — single-session enforcement is scoped per client,
- * so a web login never logs out the Pinout app and vice versa.
+ * Helper function to create a session
  */
-const createSession = async (
-    userId,
-    sessionToken,
-    req,
-    client = "web",
-    deviceInfo = getDeviceInfo(req)
-) => {
+const createSession = async (userId, sessionToken, req) => {
+    const deviceInfo = getDeviceInfo(req);
     const ipAddress = req.ip || req.connection.remoteAddress || "unknown";
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiry (matching refresh token)
 
     await query(
-        `INSERT INTO user_sessions (user_id, session_token, device_info, ip_address, user_agent, expires_at, client)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO user_sessions (user_id, session_token, device_info, ip_address, user_agent, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
             userId,
             sessionToken,
@@ -178,7 +169,6 @@ const createSession = async (
             ipAddress,
             deviceInfo.userAgent,
             expiresAt,
-            client,
         ]
     );
 
@@ -186,11 +176,11 @@ const createSession = async (
 };
 
 /**
- * Helper function to get active sessions for a user on one client
+ * Helper function to get active sessions for a user
  */
-const getActiveSessionsForUser = async (userId, client = "web") => {
+const getActiveSessionsForUser = async (userId) => {
     const result = await query(
-        `SELECT
+        `SELECT 
             id,
             session_token,
             device_info,
@@ -198,34 +188,29 @@ const getActiveSessionsForUser = async (userId, client = "web") => {
             user_agent,
             last_activity,
             created_at
-         FROM user_sessions
-         WHERE user_id = $1
-         AND client = $2
-         AND is_active = true
+         FROM user_sessions 
+         WHERE user_id = $1 
+         AND is_active = true 
          AND expires_at > NOW()
          ORDER BY last_activity DESC`,
-        [userId, client]
+        [userId]
     );
     return result.rows;
 };
 
 /**
- * Helper function to invalidate all sessions for a user on one client (except current one)
+ * Helper function to invalidate all sessions for a user (except current one)
  */
-const invalidateOtherSessions = async (
-    userId,
-    currentSessionToken,
-    client = "web"
-) => {
+const invalidateOtherSessions = async (userId, currentSessionToken) => {
     const result = await query(
-        `UPDATE user_sessions
-         SET is_active = false
-         WHERE user_id = $1 AND session_token != $2 AND client = $3 AND is_active = true
-         RETURNING
+        `UPDATE user_sessions 
+         SET is_active = false 
+         WHERE user_id = $1 AND session_token != $2 AND is_active = true
+         RETURNING 
             device_info,
             ip_address,
             last_activity`,
-        [userId, currentSessionToken, client]
+        [userId, currentSessionToken]
     );
     return result.rows;
 };
@@ -752,314 +737,6 @@ const getActiveSessions = async (req, res, next) => {
     }
 };
 
-// ---------------------------------------------------------------------------
-// Pinout app login: email + password → email OTP → tokens.
-// Each account is locked to one device (users.pinout_device_id); only an admin
-// can release it (DELETE /api/admin/users/:id/pinout-device).
-// ---------------------------------------------------------------------------
-
-const PINOUT_OTP_TTL_MINUTES = 10;
-const PINOUT_OTP_RESEND_COOLDOWN_SECONDS = 60;
-const PINOUT_OTP_MAX_ATTEMPTS = 5;
-
-const DEVICE_MISMATCH_MESSAGE =
-    "This account is registered to another device. Contact support to reset it.";
-
-const sendDeviceMismatch = (res) =>
-    res.status(403).json({
-        success: false,
-        code: "DEVICE_MISMATCH",
-        message: DEVICE_MISMATCH_MESSAGE,
-    });
-
-/**
- * Pinout app login step 1: verify credentials + device, then email an OTP
- */
-const appLogin = async (req, res, next) => {
-    try {
-        const { email, password, device_id } = req.body;
-
-        const result = await query(
-            "SELECT id, email, password_hash, first_name, last_name, is_active, pinout_device_id FROM users WHERE email = $1",
-            [email]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(401).json({
-                success: false,
-                code: "INVALID_CREDENTIALS",
-                message: "Invalid email or password",
-            });
-        }
-
-        const user = result.rows[0];
-
-        if (!user.is_active) {
-            return res.status(401).json({
-                success: false,
-                code: "ACCOUNT_DEACTIVATED",
-                message: "Account is deactivated",
-            });
-        }
-
-        const isPasswordValid = await bcrypt.compare(
-            password,
-            user.password_hash
-        );
-
-        if (!isPasswordValid) {
-            return res.status(401).json({
-                success: false,
-                code: "INVALID_CREDENTIALS",
-                message: "Invalid email or password",
-            });
-        }
-
-        if (user.pinout_device_id && user.pinout_device_id !== device_id) {
-            return sendDeviceMismatch(res);
-        }
-
-        // Resend cooldown
-        const recentOtp = await query(
-            `SELECT CEIL(EXTRACT(EPOCH FROM (created_at + INTERVAL '${PINOUT_OTP_RESEND_COOLDOWN_SECONDS} seconds' - NOW())))::int AS retry_after
-             FROM pinout_login_otps
-             WHERE user_id = $1
-             AND used = false
-             AND created_at > NOW() - INTERVAL '${PINOUT_OTP_RESEND_COOLDOWN_SECONDS} seconds'
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [user.id]
-        );
-
-        if (recentOtp.rows.length > 0) {
-            const retryAfterSeconds = Math.max(recentOtp.rows[0].retry_after, 1);
-            return res.status(429).json({
-                success: false,
-                code: "OTP_COOLDOWN",
-                message: `Please wait ${retryAfterSeconds}s before requesting a new code`,
-                data: { retryAfterSeconds },
-            });
-        }
-
-        // Only one pending code per user
-        await query(
-            "DELETE FROM pinout_login_otps WHERE user_id = $1 AND used = false",
-            [user.id]
-        );
-
-        const otp = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
-        const otpHash = await bcrypt.hash(otp, 10);
-
-        const otpResult = await query(
-            `INSERT INTO pinout_login_otps (user_id, device_id, otp_hash, expires_at)
-             VALUES ($1, $2, $3, NOW() + INTERVAL '${PINOUT_OTP_TTL_MINUTES} minutes')
-             RETURNING id`,
-            [user.id, device_id, otpHash]
-        );
-        const challengeId = otpResult.rows[0].id;
-
-        if (process.env.NODE_ENV !== "production") {
-            console.log(`🔐 Pinout login OTP for ${user.email}: ${otp}`);
-        }
-
-        const emailResult = await sendPinoutLoginOtpEmail(
-            user.email,
-            `${user.first_name} ${user.last_name}`,
-            otp,
-            PINOUT_OTP_TTL_MINUTES
-        );
-
-        if (!emailResult.success && process.env.NODE_ENV === "production") {
-            // Drop the undeliverable code so the user isn't stuck behind the cooldown
-            await query("DELETE FROM pinout_login_otps WHERE id = $1", [
-                challengeId,
-            ]);
-            return res.status(503).json({
-                success: false,
-                code: "OTP_SEND_FAILED",
-                message: "Could not send the verification code. Please try again.",
-            });
-        }
-
-        res.json({
-            success: true,
-            message: "Verification code sent to your email",
-            data: {
-                challengeId,
-                expiresInSeconds: PINOUT_OTP_TTL_MINUTES * 60,
-                resendAfterSeconds: PINOUT_OTP_RESEND_COOLDOWN_SECONDS,
-            },
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Pinout app login step 2: verify the OTP, lock the account to this device, issue tokens
- */
-const appVerifyOtp = async (req, res, next) => {
-    try {
-        const { challenge_id, otp, device_id, device_name, device_platform } =
-            req.body;
-
-        // Consume one attempt atomically before checking the code
-        const attemptResult = await query(
-            `UPDATE pinout_login_otps
-             SET attempts = attempts + 1
-             WHERE id = $1
-             AND device_id = $2
-             AND used = false
-             AND expires_at > NOW()
-             AND attempts < $3
-             RETURNING user_id, otp_hash, attempts`,
-            [challenge_id, device_id, PINOUT_OTP_MAX_ATTEMPTS]
-        );
-
-        if (attemptResult.rows.length === 0) {
-            const lockedResult = await query(
-                `SELECT id FROM pinout_login_otps
-                 WHERE id = $1 AND device_id = $2 AND used = false AND expires_at > NOW()`,
-                [challenge_id, device_id]
-            );
-
-            if (lockedResult.rows.length > 0) {
-                await query(
-                    "UPDATE pinout_login_otps SET used = true WHERE id = $1",
-                    [challenge_id]
-                );
-                return res.status(429).json({
-                    success: false,
-                    code: "OTP_TOO_MANY_ATTEMPTS",
-                    message: "Too many incorrect attempts. Please log in again.",
-                });
-            }
-
-            return res.status(400).json({
-                success: false,
-                code: "OTP_EXPIRED",
-                message: "This code has expired. Please log in again.",
-            });
-        }
-
-        const challenge = attemptResult.rows[0];
-        const isOtpValid = await bcrypt.compare(otp, challenge.otp_hash);
-
-        if (!isOtpValid) {
-            const attemptsRemaining =
-                PINOUT_OTP_MAX_ATTEMPTS - challenge.attempts;
-
-            if (attemptsRemaining <= 0) {
-                await query(
-                    "UPDATE pinout_login_otps SET used = true WHERE id = $1",
-                    [challenge_id]
-                );
-                return res.status(429).json({
-                    success: false,
-                    code: "OTP_TOO_MANY_ATTEMPTS",
-                    message: "Too many incorrect attempts. Please log in again.",
-                });
-            }
-
-            return res.status(400).json({
-                success: false,
-                code: "OTP_INVALID",
-                message: `Incorrect code. ${attemptsRemaining} attempt${
-                    attemptsRemaining === 1 ? "" : "s"
-                } left.`,
-                data: { attemptsRemaining },
-            });
-        }
-
-        // Single use: only one request can claim the code
-        const claimResult = await query(
-            "UPDATE pinout_login_otps SET used = true WHERE id = $1 AND used = false RETURNING id",
-            [challenge_id]
-        );
-
-        if (claimResult.rows.length === 0) {
-            return res.status(400).json({
-                success: false,
-                code: "OTP_EXPIRED",
-                message: "This code has expired. Please log in again.",
-            });
-        }
-
-        const userResult = await query(
-            "SELECT id, email, first_name, last_name, role, user_type, is_active FROM users WHERE id = $1",
-            [challenge.user_id]
-        );
-
-        if (userResult.rows.length === 0 || !userResult.rows[0].is_active) {
-            return res.status(401).json({
-                success: false,
-                code: "ACCOUNT_DEACTIVATED",
-                message: "Account is deactivated",
-            });
-        }
-
-        const user = userResult.rows[0];
-
-        const deviceInfo = {
-            deviceType: "mobile",
-            browser: "Pinout app",
-            os: device_platform || "unknown",
-            deviceName: device_name || "Unknown device",
-            userAgent: req.headers["user-agent"] || "",
-        };
-
-        // Lock the account to this device. The WHERE clause makes this race-safe:
-        // if another device bound first, zero rows update.
-        const bindResult = await query(
-            `UPDATE users
-             SET pinout_device_id = $1,
-                 pinout_device_info = $2,
-                 pinout_device_bound_at = COALESCE(pinout_device_bound_at, CURRENT_TIMESTAMP)
-             WHERE id = $3
-             AND (pinout_device_id IS NULL OR pinout_device_id = $1)
-             RETURNING id`,
-            [device_id, JSON.stringify(deviceInfo), user.id]
-        );
-
-        if (bindResult.rows.length === 0) {
-            return sendDeviceMismatch(res);
-        }
-
-        const sessionToken = uuidv4();
-        await createSession(user.id, sessionToken, req, "pinout", deviceInfo);
-        await invalidateOtherSessions(user.id, sessionToken, "pinout");
-
-        const token = generateToken({
-            userId: user.id,
-            email: user.email,
-            sessionId: sessionToken,
-        });
-        const refreshToken = generateRefreshToken({
-            userId: user.id,
-            sessionId: sessionToken,
-        });
-
-        res.json({
-            success: true,
-            message: "Login successful",
-            data: {
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    first_name: user.first_name,
-                    last_name: user.last_name,
-                    role: user.role,
-                    user_type: user.user_type,
-                },
-                token,
-                refreshToken,
-            },
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
 module.exports = {
     register,
     login,
@@ -1068,6 +745,4 @@ module.exports = {
     resetPassword,
     logout,
     getActiveSessions,
-    appLogin,
-    appVerifyOtp,
 };

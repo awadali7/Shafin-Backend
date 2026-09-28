@@ -28,6 +28,7 @@ const settingsRoutes = require("./routes/settings");
 const galleryRoutes = require("./routes/galleryRoutes");
 const landingBannerRoutes = require("./routes/landingBanners");
 const productExtraInfoRoutes = require("./routes/productExtraInfo");
+const appRoutes = require("./routes/app");
 // Import middleware
 const errorHandler = require("./middleware/errorHandler");
 
@@ -148,6 +149,7 @@ app.use("/api/payments", jsonParser, urlencodedParser);
 app.use("/api/terms", jsonParser, urlencodedParser);
 app.use("/api/fix-user-types", jsonParser, urlencodedParser);
 app.use("/api/settings", jsonParser, urlencodedParser);
+app.use("/api/app", jsonParser, urlencodedParser);
 
 // DO NOT apply body parsers to these routes (they use multipart/form-data):
 // - /api/courses (POST uses multer for cover_image file uploads)
@@ -199,6 +201,7 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/gallery", galleryRoutes);
 app.use("/api/landing-banners", landingBannerRoutes);
 app.use("/api/product-extra-info", productExtraInfoRoutes);
+app.use("/api/app", appRoutes);
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({

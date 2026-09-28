@@ -110,6 +110,17 @@ const getDashboard = async (req, res, next) => {
             // table may not exist in all environments
         }
 
+        // ─── Pinout app users ────────────────────────────────────────────────
+        let appUsersPending = 0;
+        try {
+            const appUsersResult = await query(
+                `SELECT COUNT(*) as total FROM app_users WHERE status = 'pending'`
+            );
+            appUsersPending = parseInt(appUsersResult.rows[0].total);
+        } catch (e) {
+            // table may not exist until migrations/create_app_users.sql has run
+        }
+
         // ─── Blogs ───────────────────────────────────────────────────────────
         const blogStatsResult = await query(
             `SELECT
@@ -301,6 +312,7 @@ const getDashboard = async (req, res, next) => {
                 kyc_verified: parseInt(kycStats.kyc_verified) || 0,
                 kyc_rejected: parseInt(kycStats.kyc_rejected) || 0,
                 product_kyc_pending: productKycPending,
+                app_users_pending: appUsersPending,
 
                 // ── Blogs ─────────────────────────────────────────────────────
                 total_blogs: parseInt(blogStats.total_blogs) || 0,
@@ -733,11 +745,8 @@ const getUserLoginDetails = async (req, res, next) => {
                 last_login_at,
                 last_login_ip,
                 last_login_device,
-                pinout_device_id,
-                pinout_device_info,
-                pinout_device_bound_at,
                 created_at
-             FROM users
+             FROM users 
              WHERE id = $1`,
             [id]
         );
@@ -753,14 +762,13 @@ const getUserLoginDetails = async (req, res, next) => {
 
         // Get all sessions (active and inactive)
         const sessionsResult = await query(
-            `SELECT
+            `SELECT 
                 id,
                 session_token,
                 device_info,
                 ip_address,
                 user_agent,
                 is_active,
-                client,
                 last_activity,
                 created_at,
                 expires_at
@@ -798,51 +806,6 @@ const getUserLoginDetails = async (req, res, next) => {
                 sessions,
                 active_sessions_count: activeSessionsCount,
                 total_sessions_count: sessions.length,
-            },
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Release a user's Pinout app device lock (Admin only).
- * Also logs out any Pinout app session so the old device must sign in again.
- */
-const resetPinoutDevice = async (req, res, next) => {
-    try {
-        const { id } = req.params;
-
-        const result = await query(
-            `UPDATE users
-             SET pinout_device_id = NULL,
-                 pinout_device_info = NULL,
-                 pinout_device_bound_at = NULL
-             WHERE id = $1
-             RETURNING id, email`,
-            [id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found",
-            });
-        }
-
-        const sessionsResult = await query(
-            `UPDATE user_sessions
-             SET is_active = false
-             WHERE user_id = $1 AND client = 'pinout' AND is_active = true`,
-            [id]
-        );
-
-        res.json({
-            success: true,
-            message: "Pinout device reset. The user can now log in on a new device.",
-            data: {
-                user_id: result.rows[0].id,
-                sessions_revoked: sessionsResult.rowCount,
             },
         });
     } catch (error) {
@@ -1047,5 +1010,4 @@ module.exports = {
     getAnnouncements,
     deleteUser,
     getUserLoginDetails,
-    resetPinoutDevice,
 };

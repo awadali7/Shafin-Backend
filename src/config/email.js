@@ -198,29 +198,96 @@ const sendPasswordResetEmail = async (userEmail, userName, resetToken) => {
     return await sendEmail(userEmail, subject, html);
 };
 
+// App signup names are user-supplied and emailed to any address typed in,
+// so escape them rather than letting someone send HTML from our domain.
+const escapeHtml = (value) =>
+    String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
 /**
- * Send Pinout app login verification code
+ * Send Pinout app verification code (signup or password reset)
  */
-const sendPinoutLoginOtpEmail = async (
+const sendAppOtpEmail = async (
     userEmail,
     userName,
     otp,
+    purpose,
     expiresInMinutes = 10
 ) => {
-    const subject = `${otp} is your Pinout login code`;
+    const isSignup = purpose === "signup";
+    const subject = isSignup
+        ? `${otp} is your Pinout app verification code`
+        : `${otp} is your Pinout app password reset code`;
+    const intro = isSignup
+        ? "Use this code to verify your email and create your Pinout app account:"
+        : "Use this code to reset your Pinout app password:";
+    const footer = isSignup
+        ? "If you didn't sign up for the Pinout app, you can ignore this email."
+        : "If you didn't ask to reset your password, you can ignore this email.";
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #B00000;">Pinout App Login</h2>
-            <p>Hi ${userName},</p>
-            <p>Use this code to finish signing in to the Pinout app:</p>
+            <h2 style="color: #B00000;">Pinout App</h2>
+            <p>Hi ${escapeHtml(userName)},</p>
+            <p>${intro}</p>
             <p style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #111;">${otp}</p>
             <p>This code will expire in ${expiresInMinutes} minutes.</p>
-            <p>If you didn't try to sign in, please change your password — someone may know it.</p>
+            <p>${footer}</p>
             <p>Best regards,<br>DiagTools Team</p>
         </div>
     `;
-    const text = `Your Pinout login code is ${otp}. It expires in ${expiresInMinutes} minutes.`;
+    const text = `Your Pinout app code is ${otp}. It expires in ${expiresInMinutes} minutes.`;
     return await sendEmail(userEmail, subject, html, text);
+};
+
+/**
+ * Send Pinout app access approved email
+ */
+const sendAppAccessApprovedEmail = async (userEmail, userName, serialNumber) => {
+    const subject = "Your Pinout app access is approved";
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">✅ Pinout App Access Approved</h2>
+            <p>Hi ${escapeHtml(userName)},</p>
+            <p>Your serial number <strong>${escapeHtml(serialNumber)}</strong> has been verified.</p>
+            <p>Open the Pinout app to start using it.</p>
+            <p>Best regards,<br>DiagTools Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
+};
+
+/**
+ * Send Pinout app access rejected email
+ */
+const sendAppAccessRejectedEmail = async (
+    userEmail,
+    userName,
+    serialNumber,
+    reason
+) => {
+    const subject = "Your Pinout app request needs attention";
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #dc3545;">⚠️ Pinout App Request Not Approved</h2>
+            <p>Hi ${escapeHtml(userName)},</p>
+            <p>We couldn't verify the serial number <strong>${escapeHtml(serialNumber)}</strong> on your Pinout app account.</p>
+            ${
+                reason
+                    ? `<div style="background-color: #f8d7da; border-left: 4px solid #dc3545; padding: 15px; margin: 20px 0;">
+                <p style="margin: 0;"><strong>Reason:</strong></p>
+                <p style="margin: 10px 0;">${escapeHtml(reason)}</p>
+            </div>`
+                    : ""
+            }
+            <p>You can open the Pinout app and submit the correct serial number.</p>
+            <p>Best regards,<br>DiagTools Team</p>
+        </div>
+    `;
+    return await sendEmail(userEmail, subject, html);
 };
 
 /**
@@ -641,7 +708,9 @@ module.exports = {
     sendCoursePurchaseSuccessEmail,
     sendCourseAccessRejectedEmail,
     sendPasswordResetEmail,
-    sendPinoutLoginOtpEmail,
+    sendAppOtpEmail,
+    sendAppAccessApprovedEmail,
+    sendAppAccessRejectedEmail,
     sendMultipleDeviceWarningEmail,
     sendKYCApprovedEmail,
     sendKYCRejectedEmail,
