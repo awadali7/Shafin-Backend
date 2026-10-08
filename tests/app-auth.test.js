@@ -47,6 +47,7 @@ const baseUser = {
     email: 'tech@workshop.in',
     password_hash: PASSWORD_HASH,
     serial_number: null,
+    phone: null,
     status: 'serial_required',
     rejection_reason: null,
     serial_submitted_at: null,
@@ -324,8 +325,8 @@ describe('session checks', () => {
 // ---------------------------------------------------------------------------
 
 describe('submitSerial', () => {
-    const req = (status) =>
-        mockReq({ body: { serial_number: 'DT-001' }, appUser: { ...baseUser, status } });
+    const req = (status, body = { serial_number: 'DT-001', phone: '+919876543210' }) =>
+        mockReq({ body, appUser: { ...baseUser, status } });
 
     test.each(['pending', 'approved'])('already %s → 409 SERIAL_ALREADY_SUBMITTED', async (status) => {
         const res = mockRes();
@@ -343,12 +344,49 @@ describe('submitSerial', () => {
         expect(sentBody(res).code).toBe('SERIAL_TAKEN');
     });
 
-    test.each(['serial_required', 'rejected'])('from %s → pending', async (status) => {
-        routeQueries([[/UPDATE app_users/, { rows: [{ ...baseUser, serial_number: 'DT-001', status: 'pending' }] }]]);
+    test.each(['serial_required', 'rejected'])('from %s → pending, with phone', async (status) => {
+        routeQueries([[/UPDATE app_users/, { rows: [{ ...baseUser, serial_number: 'DT-001', phone: '+919876543210', status: 'pending' }] }]]);
         const res = mockRes();
         await submitSerial(req(status), res, jest.fn());
         expect(sentBody(res).data.user.status).toBe('pending');
-        expect(findCall(/UPDATE app_users/)[1]).toEqual(['DT-001', USER_ID]);
+        expect(sentBody(res).data.user.phone).toBe('+919876543210');
+        expect(findCall(/UPDATE app_users/)[1]).toEqual(['DT-001', '+919876543210', USER_ID]);
+    });
+
+    test('older app build without phone still submits; stored phone kept', async () => {
+        routeQueries([[/UPDATE app_users/, { rows: [{ ...baseUser, serial_number: 'DT-001', status: 'pending' }] }]]);
+        const res = mockRes();
+        await submitSerial(req('serial_required', { serial_number: 'DT-001' }), res, jest.fn());
+        expect(sentBody(res).data.user.status).toBe('pending');
+        const [sql, params] = findCall(/UPDATE app_users/);
+        expect(sql).toMatch(/phone = COALESCE\(\$2, phone\)/);
+        expect(params).toEqual(['DT-001', null, USER_ID]);
+    });
+});
+
+describe('appSerialValidation', () => {
+    const { validationResult } = require('express-validator');
+    const { appSerialValidation } = require('../src/utils/validators');
+
+    const validate = async (body) => {
+        const req = { body };
+        for (const rule of appSerialValidation) await rule.run(req);
+        return { req, errors: validationResult(req).array().map((e) => e.path) };
+    };
+
+    test('normalizes the phone number', async () => {
+        const { req, errors } = await validate({ serial_number: 'dt 001', phone: '+91 98765-43210' });
+        expect(errors).toEqual([]);
+        expect(req.body).toEqual({ serial_number: 'DT001', phone: '+919876543210' });
+    });
+
+    test('phone is optional for older app builds', async () => {
+        expect((await validate({ serial_number: 'DT-001' })).errors).toEqual([]);
+        expect((await validate({ serial_number: 'DT-001', phone: null })).errors).toEqual([]);
+    });
+
+    test.each(['12345', 'abcdefghij', '+91 98765 4321O', ''])('rejects phone %p', async (phone) => {
+        expect((await validate({ serial_number: 'DT-001', phone })).errors).toEqual(['phone']);
     });
 });
 

@@ -41,6 +41,7 @@ const toAppUserResponse = (user) => ({
     full_name: user.full_name,
     email: user.email,
     serial_number: user.serial_number,
+    phone: user.phone,
     status: user.status,
     rejection_reason: user.rejection_reason,
     serial_submitted_at: user.serial_submitted_at,
@@ -502,11 +503,12 @@ const getMe = async (req, res) => {
 };
 
 /**
- * Submit (or, after a rejection, resubmit) the serial number for approval
+ * Submit (or, after a rejection, resubmit) the serial number and phone
+ * number for approval. Older app builds send no phone; keep any stored one.
  */
 const submitSerial = async (req, res, next) => {
     try {
-        const { serial_number } = req.body;
+        const { serial_number, phone } = req.body;
         const { id, status } = req.appUser;
 
         if (status === "pending" || status === "approved") {
@@ -525,14 +527,15 @@ const submitSerial = async (req, res, next) => {
             result = await query(
                 `UPDATE app_users
                  SET serial_number = $1,
+                     phone = COALESCE($2, phone),
                      status = 'pending',
                      serial_submitted_at = CURRENT_TIMESTAMP,
                      rejection_reason = NULL,
                      reviewed_by = NULL,
                      reviewed_at = NULL
-                 WHERE id = $2 AND status IN ('serial_required', 'rejected')
+                 WHERE id = $3 AND status IN ('serial_required', 'rejected')
                  RETURNING ${appUserColumns()}`,
-                [serial_number, id]
+                [serial_number, phone ?? null, id]
             );
         } catch (updateError) {
             // idx_app_users_serial_unique: another pending/approved account holds it
@@ -675,7 +678,7 @@ const listAppUsers = async (req, res, next) => {
         if (search) {
             params.push(`%${search}%`);
             conditions.push(
-                `(u.email ILIKE $${params.length} OR u.full_name ILIKE $${params.length} OR u.serial_number ILIKE $${params.length})`
+                `(u.email ILIKE $${params.length} OR u.full_name ILIKE $${params.length} OR u.serial_number ILIKE $${params.length} OR u.phone ILIKE $${params.length})`
             );
         }
 

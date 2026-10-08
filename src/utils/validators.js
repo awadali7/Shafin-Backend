@@ -252,6 +252,15 @@ const appSerialValidation = [
         .withMessage(
             "Enter a valid serial number (3-50 letters, numbers, - / _ .)"
         ),
+    // Optional so app builds from before the phone field can still submit
+    body("phone")
+        .optional({ values: "null" })
+        .isString()
+        .withMessage("Enter a valid phone number")
+        .bail()
+        .customSanitizer((value) => value.replace(/[\s\-().]/g, ""))
+        .matches(/^\+?[0-9]{10,15}$/)
+        .withMessage("Enter a valid phone number (10-15 digits)"),
 ];
 
 /**

@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS app_users (
     email VARCHAR(255) UNIQUE NOT NULL, -- stored lowercase
     password_hash VARCHAR(255) NOT NULL,
     serial_number VARCHAR(50), -- stored normalized: no spaces, uppercase
+    phone VARCHAR(30), -- given with the serial; digits with optional leading + (migrations/add_app_user_phone.sql)
     status VARCHAR(20) NOT NULL DEFAULT 'serial_required'
         CHECK (status IN ('serial_required', 'pending', 'approved', 'rejected')),
     rejection_reason TEXT,

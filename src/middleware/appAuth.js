@@ -7,6 +7,7 @@ const APP_USER_FIELDS = [
     "full_name",
     "email",
     "serial_number",
+    "phone",
     "status",
     "rejection_reason",
     "serial_submitted_at",
