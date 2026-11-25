@@ -1,5 +1,6 @@
 const { query, getClient } = require("../config/database");
 const { formatVideoEmbedUrl, detectVideoPlatform, getPublicUrl } = require("../utils/helpers");
+const { protectLesson } = require("../utils/lessonAccess");
 const { authenticate } = require("../middleware/auth");
 
 /**
@@ -42,6 +43,7 @@ const getCourseVideos = async (req, res, next) => {
 
         // If user is authenticated, check access and progress
         let videos = videosResult.rows;
+        const isAdmin = req.user?.role === "admin";
 
         if (userId) {
             // Check if user has access
@@ -76,21 +78,26 @@ const getCourseVideos = async (req, res, next) => {
                 const isUnlocked =
                     isFirstVideo || (hasAccess && progress?.is_unlocked);
 
-                return {
-                    ...video,
-                    is_watched: progress?.is_watched || false,
-                    is_unlocked: isUnlocked,
-                    is_locked: !isUnlocked,
-                };
+                return protectLesson(
+                    {
+                        ...video,
+                        is_watched: progress?.is_watched || false,
+                        is_unlocked: isUnlocked,
+                        is_locked: !isUnlocked,
+                    },
+                    { hasAccess, isAdmin }
+                );
             });
         } else {
             // For unauthenticated users, only first video is unlocked
-            videos = videos.map((video) => ({
-                ...video,
-                is_watched: false,
-                is_unlocked: video.order_index === 0,
-                is_locked: video.order_index !== 0,
-            }));
+            videos = videos.map((video) =>
+                protectLesson({
+                    ...video,
+                    is_watched: false,
+                    is_unlocked: video.order_index === 0,
+                    is_locked: video.order_index !== 0,
+                })
+            );
         }
 
         res.json({
@@ -175,12 +182,15 @@ const getVideoById = async (req, res, next) => {
 
         res.json({
             success: true,
-            data: {
-                ...video,
-                has_access: hasAccess,
-                is_unlocked: isUnlocked,
-                is_locked: !isUnlocked,
-            },
+            data: protectLesson(
+                {
+                    ...video,
+                    has_access: hasAccess,
+                    is_unlocked: isUnlocked,
+                    is_locked: !isUnlocked,
+                },
+                { hasAccess, isAdmin: req.user?.role === "admin" }
+            ),
         });
     } catch (error) {
         next(error);

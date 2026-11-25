@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
 const videoController = require("../controllers/videoController");
-const { authenticate, isAdmin } = require("../middleware/auth");
+const { authenticate, optionalAuthenticate, isAdmin } = require("../middleware/auth");
 const { createVideoValidation, updateVideoValidation } = require("../utils/validators");
 const validate = require("../middleware/validate");
 
@@ -51,9 +51,10 @@ const upload = multer({
 // JSON body parser for routes that don't need file uploads
 const jsonParser = express.json({ limit: "50mb" });
 
-// Public routes (but may require course access)
-router.get("/:courseId/videos", videoController.getCourseVideos);
-router.get("/:courseId/videos/:videoId", videoController.getVideoById);
+// Public routes; optionalAuthenticate sets req.user when a token is sent, so enrolled
+// users and admins get lesson URLs and everyone else gets only the free first lesson
+router.get("/:courseId/videos", optionalAuthenticate, videoController.getCourseVideos);
+router.get("/:courseId/videos/:videoId", optionalAuthenticate, videoController.getVideoById);
 
 // Admin only routes
 router.post(

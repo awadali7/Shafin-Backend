@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const { query } = require("../config/database");
 const { normalizeImageUrl } = require("../utils/helpers");
+const { protectLesson } = require("../utils/lessonAccess");
 
 /**
  * Get current user profile
@@ -251,13 +252,16 @@ const getCourseProgress = async (req, res, next) => {
             const isUnlocked =
                 isFirstVideo || (hasAccess && progress?.is_unlocked);
 
-            return {
-                ...video,
-                is_watched: progress?.is_watched || false,
-                is_unlocked: isUnlocked,
-                watched_at: progress?.watched_at || null,
-                unlocked_at: progress?.unlocked_at || null,
-            };
+            return protectLesson(
+                {
+                    ...video,
+                    is_watched: progress?.is_watched || false,
+                    is_unlocked: isUnlocked,
+                    watched_at: progress?.watched_at || null,
+                    unlocked_at: progress?.unlocked_at || null,
+                },
+                { hasAccess }
+            );
         });
 
         // Calculate statistics
